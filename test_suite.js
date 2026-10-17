@@ -86,6 +86,9 @@ async function runTestSuite() {
   const resAuthJs = await request('/js/auth.js');
   assert(resAuthJs.status === 200 && resAuthJs.raw.includes('checkGoogleOAuthRedirect'), 'Auth Engine (/js/auth.js)', 'Client auth engine loaded');
 
+  const resApiConfig = await request('/js/api-config.js');
+  assert(resApiConfig.status === 200 && resApiConfig.raw.includes('window.apiUrl'), 'API Config Module (/js/api-config.js)', 'Dynamic API resolver served');
+
   const resAppJs = await request('/js/app.js');
   assert(resAppJs.status === 200, 'App Logic (/js/app.js)', 'Main app script served');
 
@@ -99,6 +102,12 @@ async function runTestSuite() {
   // TEST GROUP 2: TELEMETRY & DATABASE HEALTH
   // -------------------------------------------------------------------------
   console.log('\n--- 2. Testing Telemetry, Network & Database Endpoints ---');
+
+  const resHealth = await request('/api/health');
+  assert(resHealth.status === 200 && resHealth.data.status === 'ok', 'Render Health Check (/api/health)', `Status: ${resHealth.data.status}, Database: ${resHealth.data.database}`);
+
+  const resOptions = await request('/api/health', { method: 'OPTIONS' });
+  assert(resOptions.status === 204 && resOptions.headers['access-control-allow-origin'] === '*', 'CORS Preflight (Cross-Origin Render)', 'Access-Control-Allow-Origin: *');
 
   const resMongo = await request('/api/mongodb/status');
   assert(resMongo.status === 200 && (resMongo.data.connected || resMongo.data.status === 'in-memory'), 'MongoDB Telemetry (/api/mongodb/status)', `State: ${resMongo.data.connected ? 'Connected' : 'In-Memory fallback'}`);

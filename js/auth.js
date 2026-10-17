@@ -6,6 +6,13 @@
  * 3. Security Key (Hardware FIDO / Security PIN)
  */
 
+function _authFetch(url, options) {
+  const target = (typeof window !== 'undefined' && typeof window.apiUrl === 'function') 
+    ? window.apiUrl(url) 
+    : url;
+  return fetch(target, options);
+}
+
 class ArgusAuth {
   constructor() {
     this.token = localStorage.getItem('argus_auth_token') || null;
@@ -128,10 +135,19 @@ class ArgusAuth {
     this.tabSetAccount = document.getElementById('tabSettingsAccount');
     this.tabSet2FA = document.getElementById('tabSettings2FA');
     this.tabSetPassword = document.getElementById('tabSettingsPassword');
+    this.tabSetApi = document.getElementById('tabSettingsApi');
 
     this.panelSetAccount = document.getElementById('panelSettingsAccount');
     this.panelSet2FA = document.getElementById('panelSettings2FA');
     this.panelSetPassword = document.getElementById('panelSettingsPassword');
+    this.panelSetApi = document.getElementById('panelSettingsApi');
+
+    // Cloud API Settings Elements
+    this.settingApiBaseUrl = document.getElementById('settingApiBaseUrl');
+    this.btnSaveApiBase = document.getElementById('btnSaveApiBase');
+    this.btnResetApiBase = document.getElementById('btnResetApiBase');
+    this.btnTestApiHealth = document.getElementById('btnTestApiHealth');
+    this.apiHealthStatusBox = document.getElementById('apiHealthStatusBox');
 
     // Settings Form Elements
     this.formUpdateProfile = document.getElementById('formUpdateProfile');
@@ -581,6 +597,20 @@ class ArgusAuth {
     if (this.tabSetPassword) {
       this.tabSetPassword.addEventListener('click', () => this.switchSettingsTab('password'));
     }
+    if (this.tabSetApi) {
+      this.tabSetApi.addEventListener('click', () => this.switchSettingsTab('api'));
+    }
+
+    // Cloud API Settings Actions
+    if (this.btnSaveApiBase) {
+      this.btnSaveApiBase.addEventListener('click', () => this.handleSaveApiBase());
+    }
+    if (this.btnResetApiBase) {
+      this.btnResetApiBase.addEventListener('click', () => this.handleResetApiBase());
+    }
+    if (this.btnTestApiHealth) {
+      this.btnTestApiHealth.addEventListener('click', () => this.handleTestApiHealth());
+    }
 
     // Settings Profile Form
     if (this.formUpdateProfile) {
@@ -744,6 +774,24 @@ class ArgusAuth {
     }
   }
 
+  showStatus(msg, type = 'info') {
+    const target = this.googleAuthError || this.loginError;
+    if (target) {
+      target.textContent = msg;
+      target.style.display = 'block';
+      if (type === 'info') {
+        target.style.background = 'rgba(0, 240, 255, 0.15)';
+        target.style.borderColor = 'var(--accent-cyan)';
+        target.style.color = 'var(--accent-cyan)';
+      } else {
+        target.style.background = 'rgba(255, 59, 92, 0.15)';
+        target.style.borderColor = 'var(--accent-crimson)';
+        target.style.color = 'var(--accent-crimson)';
+      }
+    }
+    console.log(`[ARGUS AUTH ${type.toUpperCase()}]:`, msg);
+  }
+
   async checkInitialSession() {
     if (!this.token) {
       this.showGatekeeper();
@@ -751,7 +799,7 @@ class ArgusAuth {
     }
 
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await _authFetch('/api/auth/me', {
         headers: { 'Authorization': `Bearer ${this.token}` }
       });
       const data = await res.json();
@@ -799,7 +847,7 @@ class ArgusAuth {
     });
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await _authFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: 'admin', password: 'password123' })
@@ -811,7 +859,7 @@ class ArgusAuth {
 
       // Auto-verify 2FA challenge with biometric passkey signature
       if (data.requires2FA && data.challengeId) {
-        const verifyRes = await fetch('/api/auth/verify-2fa', {
+        const verifyRes = await _authFetch('/api/auth/verify-2fa', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -850,7 +898,7 @@ class ArgusAuth {
       this.setBtnLoading(this.btnSubmitLogin, true);
       this.clearErrors();
       try {
-        const res = await fetch('/api/auth/login', {
+        const res = await _authFetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password })
@@ -887,7 +935,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/lookup-methods', {
+      const res = await _authFetch('/api/auth/lookup-methods', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username })
@@ -946,7 +994,7 @@ class ArgusAuth {
     if (this.btnGuestLogin) this.setBtnLoading(this.btnGuestLogin, true);
 
     try {
-      const res = await fetch('/api/auth/guest', {
+      const res = await _authFetch('/api/auth/guest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -979,7 +1027,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/verify-password', {
+      const res = await _authFetch('/api/auth/verify-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1012,7 +1060,7 @@ class ArgusAuth {
     }
 
     try {
-      const res = await fetch('/api/auth/forgot-password', {
+      const res = await _authFetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1046,7 +1094,7 @@ class ArgusAuth {
 
     this.setBtnLoading(this.btnResendResetCode, true);
     try {
-      const res = await fetch('/api/auth/forgot-password', {
+      const res = await _authFetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1088,7 +1136,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/reset-password', {
+      const res = await _authFetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1154,7 +1202,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/verify-2fa', {
+      const res = await _authFetch('/api/auth/verify-2fa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1194,7 +1242,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/verify-2fa', {
+      const res = await _authFetch('/api/auth/verify-2fa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1227,7 +1275,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/resend-code', {
+      const res = await _authFetch('/api/auth/resend-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ challengeId: this.currentChallenge.challengeId })
@@ -1275,7 +1323,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/verify-2fa', {
+      const res = await _authFetch('/api/auth/verify-2fa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1319,7 +1367,7 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await _authFetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, displayName, email, password, twoFactorEnabled })
@@ -1488,7 +1536,7 @@ class ArgusAuth {
     this.playTone(300, 'sine', 0.12, 0.05);
     try {
       if (this.token) {
-        await fetch('/api/auth/logout', {
+        await _authFetch('/api/auth/logout', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${this.token}` }
         });
@@ -1539,8 +1587,8 @@ class ArgusAuth {
     this.playKeyClick();
     this.clearSettingsFeedback();
 
-    const tabs = [this.tabSetAccount, this.tabSet2FA, this.tabSetPassword];
-    const panels = [this.panelSetAccount, this.panelSet2FA, this.panelSetPassword];
+    const tabs = [this.tabSetAccount, this.tabSet2FA, this.tabSetPassword, this.tabSetApi];
+    const panels = [this.panelSetAccount, this.panelSet2FA, this.panelSetPassword, this.panelSetApi];
 
     tabs.forEach(t => t && t.classList.remove('active'));
     panels.forEach(p => p && p.classList.remove('active'));
@@ -1555,6 +1603,67 @@ class ArgusAuth {
       if (this.tabSetPassword) this.tabSetPassword.classList.add('active');
       if (this.panelSetPassword) this.panelSetPassword.classList.add('active');
       if (this.settingCurrentPassword) this.settingCurrentPassword.focus();
+    } else if (tab === 'api') {
+      if (this.tabSetApi) this.tabSetApi.classList.add('active');
+      if (this.panelSetApi) this.panelSetApi.classList.add('active');
+      if (this.settingApiBaseUrl && typeof window.getApiBase === 'function') {
+        this.settingApiBaseUrl.value = window.getApiBase() || '';
+      }
+    }
+  }
+
+  handleSaveApiBase() {
+    this.playKeyClick();
+    const url = this.settingApiBaseUrl ? this.settingApiBaseUrl.value.trim() : '';
+    if (typeof window.setApiBase === 'function') {
+      window.setApiBase(url);
+      this.showSettingsFeedback(url ? `API target set to: ${url}` : 'API target reset to Auto / Same-Origin', 'success');
+    }
+  }
+
+  handleResetApiBase() {
+    this.playKeyClick();
+    if (this.settingApiBaseUrl) this.settingApiBaseUrl.value = '';
+    if (typeof window.setApiBase === 'function') {
+      window.setApiBase('');
+      this.showSettingsFeedback('API target reset to Auto / Same-Origin', 'success');
+    }
+    if (this.apiHealthStatusBox) this.apiHealthStatusBox.style.display = 'none';
+  }
+
+  async handleTestApiHealth() {
+    this.playKeyClick();
+    if (!this.apiHealthStatusBox) return;
+    const testVal = this.settingApiBaseUrl ? this.settingApiBaseUrl.value.trim() : '';
+    this.apiHealthStatusBox.style.display = 'block';
+    this.apiHealthStatusBox.style.background = 'rgba(255, 170, 0, 0.1)';
+    this.apiHealthStatusBox.style.border = '1px solid #ffaa00';
+    this.apiHealthStatusBox.style.color = '#ffaa00';
+    this.apiHealthStatusBox.textContent = 'CONNECTING TO API HEALTH CHECK...';
+
+    try {
+      const res = typeof window.testApiConnection === 'function'
+        ? await window.testApiConnection(testVal)
+        : { ok: false, error: 'testApiConnection not loaded' };
+
+      if (res.ok) {
+        this.apiHealthStatusBox.style.background = 'rgba(0, 255, 136, 0.1)';
+        this.apiHealthStatusBox.style.border = '1px solid #00ff88';
+        this.apiHealthStatusBox.style.color = '#00ff88';
+        const dbStatus = res.data && res.data.database ? res.data.database : 'connected';
+        const uptime = res.data && res.data.uptime ? `${Math.round(res.data.uptime)}s` : 'active';
+        this.apiHealthStatusBox.textContent = `ONLINE: HTTP 200 OK | Database: ${dbStatus} | Uptime: ${uptime}`;
+      } else {
+        this.apiHealthStatusBox.style.background = 'rgba(255, 50, 50, 0.1)';
+        this.apiHealthStatusBox.style.border = '1px solid #ff3333';
+        this.apiHealthStatusBox.style.color = '#ff6666';
+        this.apiHealthStatusBox.textContent = `OFFLINE / ERROR: ${res.error || `HTTP ${res.status}`}`;
+      }
+    } catch (err) {
+      this.apiHealthStatusBox.style.background = 'rgba(255, 50, 50, 0.1)';
+      this.apiHealthStatusBox.style.border = '1px solid #ff3333';
+      this.apiHealthStatusBox.style.color = '#ff6666';
+      this.apiHealthStatusBox.textContent = `FAILED: ${err.message}`;
     }
   }
 
@@ -1579,7 +1688,7 @@ class ArgusAuth {
 
   async loadProfileData() {
     try {
-      const res = await fetch('/api/auth/profile', {
+      const res = await _authFetch('/api/auth/profile', {
         headers: { 'Authorization': `Bearer ${this.token}` }
       });
       const data = await res.json();
@@ -1612,7 +1721,7 @@ class ArgusAuth {
     this.clearSettingsFeedback();
 
     try {
-      const res = await fetch('/api/auth/profile', {
+      const res = await _authFetch('/api/auth/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1647,7 +1756,7 @@ class ArgusAuth {
     this.clearSettingsFeedback();
 
     try {
-      const res = await fetch('/api/auth/profile', {
+      const res = await _authFetch('/api/auth/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1710,7 +1819,7 @@ class ArgusAuth {
     this.clearSettingsFeedback();
 
     try {
-      const res = await fetch('/api/auth/profile', {
+      const res = await _authFetch('/api/auth/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1754,7 +1863,7 @@ class ArgusAuth {
     this.clearSettingsFeedback();
 
     try {
-      const res = await fetch('/api/auth/change-password', {
+      const res = await _authFetch('/api/auth/change-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1834,15 +1943,16 @@ class ArgusAuth {
   }
 
   async initGoogleAuth() {
-    // 1. Fetch Google Client ID from backend
+    // 1. Fetch Google Client ID from backend with built-in fallback
+    this.googleClientId = '473264498286-5l7grtjn65fbm8jq57v141hefb185uum.apps.googleusercontent.com';
     try {
-      const res = await fetch('/api/auth/google-client-id');
+      const res = await _authFetch('/api/auth/google-client-id');
       if (res.ok) {
         const data = await res.json();
-        this.googleClientId = data.clientId;
+        if (data.clientId) this.googleClientId = data.clientId;
       }
     } catch (e) {
-      console.warn('Could not fetch Google Client ID:', e.message);
+      console.warn('Could not fetch Google Client ID, using default:', e.message);
     }
 
     // 2. Listen for cross-window message from OAuth popup
@@ -2037,7 +2147,7 @@ class ArgusAuth {
     }
 
     try {
-      const res = await fetch('/api/auth/google', {
+      const res = await _authFetch('/api/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential, email, name, picture })

@@ -39,13 +39,22 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // Determine sub-action (e.g., login, google, profile, me)
+  // Determine sub-action (e.g., login, google, lookup-methods, profile, me)
   let action = '';
-  if (req.query && req.query.action) {
+  try {
+    const parsedUrl = new URL(req.url, 'http://localhost');
+    if (parsedUrl.searchParams.has('action')) {
+      action = parsedUrl.searchParams.get('action').toLowerCase();
+    }
+  } catch (e) {}
+
+  if (!action && req.query && req.query.action) {
     action = String(req.query.action).toLowerCase();
-  } else if (req.url) {
-    const cleanUrl = req.url.split('?')[0];
-    action = cleanUrl.replace(/^\/api\/auth\/?/, '').toLowerCase();
+  }
+
+  if (!action && req.url) {
+    const cleanUrl = req.url.split('?')[0].replace(/\.js$/i, '');
+    action = cleanUrl.replace(/^\/api\/auth\/?/i, '').toLowerCase();
   }
 
   const token = (req.headers && req.headers.authorization) || '';

@@ -237,8 +237,8 @@ class ArgusCameraNode {
 
     this.setStatus('CONNECTING TO HUB...', 'warning');
 
-    // Register to MongoDB backend
-    fetch('/api/cameras/register', {
+    const regEndpoint = typeof window.apiUrl === 'function' ? window.apiUrl('/api/cameras/register') : '/api/cameras/register';
+    fetch(regEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

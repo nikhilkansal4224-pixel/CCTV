@@ -117,7 +117,7 @@ class ArgusHubApp {
 
   async detectNetworkIp() {
     try {
-      const res = await fetch('/api/network-ip');
+      const res = await fetch(window.apiUrl('/api/network-ip'));
       if (res.ok) {
         const data = await res.json();
         if (data.primaryIp) {
@@ -144,7 +144,7 @@ class ArgusHubApp {
 
   async checkMongoStatus() {
     try {
-      const res = await fetch('/api/mongodb/status');
+      const res = await fetch(window.apiUrl('/api/mongodb/status'));
       if (res.ok) {
         const data = await res.json();
         this.mongoConnected = data.connected;
@@ -167,7 +167,7 @@ class ArgusHubApp {
 
   async loadHistoricalEventsFromMongo() {
     try {
-      const res = await fetch('/api/events');
+      const res = await fetch(window.apiUrl('/api/events'));
       if (res.ok) {
         const data = await res.json();
         if (data.events && Array.isArray(data.events) && data.events.length > 0) {
@@ -339,7 +339,7 @@ class ArgusHubApp {
     this.addEventToLog(event, true);
 
     // 3. Persist Event to MongoDB Backend
-    fetch('/api/events', {
+    fetch(window.apiUrl('/api/events'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event)
@@ -951,7 +951,7 @@ class ArgusHubApp {
           if (window.argusAuth && window.argusAuth.token) {
             headers['Authorization'] = `Bearer ${window.argusAuth.token}`;
           }
-          await fetch('/api/events', { method: 'DELETE', headers });
+          await fetch(window.apiUrl('/api/events'), { method: 'DELETE', headers });
           if (this.eventList) {
             this.eventList.innerHTML = `
               <div class="empty-log-placeholder" style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: 0.8rem; font-family: var(--font-hud);">
