@@ -34,6 +34,8 @@ class ArgusAuth {
     this.view2FAEmailPin = document.getElementById('view2FAEmailPin');
     this.view2FASecurityKey = document.getElementById('view2FASecurityKey');
     this.viewRegister = document.getElementById('viewRegister');
+    this.viewGoogleAuth = document.getElementById('viewGoogleAuth');
+    this.btnBackFromGoogleAuth = document.getElementById('btnBackFromGoogleAuth');
 
     // Step 1: Credentials Form Elements
     this.formLogin = document.getElementById('formLoginCredentials');
@@ -481,7 +483,8 @@ class ArgusAuth {
       this.view2FAPasskey,
       this.view2FAEmailPin,
       this.view2FASecurityKey,
-      this.viewRegister
+      this.viewRegister,
+      this.viewGoogleAuth
     ];
 
     views.forEach(v => v && v.classList.remove('active'));
@@ -506,6 +509,9 @@ class ArgusAuth {
       case 'register':
         if (this.viewRegister) this.viewRegister.classList.add('active');
         if (this.regUser) this.regUser.focus();
+        break;
+      case 'google_auth':
+        if (this.viewGoogleAuth) this.viewGoogleAuth.classList.add('active');
         break;
     }
   }
@@ -1436,27 +1442,29 @@ class ArgusAuth {
     if (this.btnLaunchGooglePageDirect) {
       this.btnLaunchGooglePageDirect.addEventListener('click', (e) => {
         e.preventDefault();
+        this.playKeyClick();
+        if (this.googleTokenClient) {
+          try {
+            this.googleTokenClient.requestAccessToken({ prompt: 'select_account' });
+            return;
+          } catch (err) {}
+        }
         this.openGoogleAuthPopup(true);
       });
     }
 
-    if (this.btnCloseGoogleFallback) {
-      this.btnCloseGoogleFallback.addEventListener('click', () => {
-        this.closeGoogleFallbackModal();
+    if (this.btnBackFromGoogleAuth) {
+      this.btnBackFromGoogleAuth.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.playKeyClick();
+        this.showView('credentials');
       });
     }
 
-    if (this.googleFallbackModal) {
-      this.googleFallbackModal.addEventListener('click', (e) => {
-        if (e.target === this.googleFallbackModal) {
-          this.closeGoogleFallbackModal();
-        }
-      });
-    }
-
-    // Fallback account selection cards
+    // 1-Click verified Google operator profiles
     document.querySelectorAll('.btn-choose-google').forEach(btn => {
       btn.addEventListener('click', () => {
+        this.playKeyClick();
         const email = btn.dataset.email;
         const name = btn.dataset.name;
         this.submitGoogleAuth({ email, name });
@@ -1477,8 +1485,10 @@ class ArgusAuth {
 
   triggerGoogleFlow() {
     this.playRadarScan();
+    // 1. Immediately transition to Google Gateway screen inside gatekeeper
+    this.showView('google_auth');
 
-    // 1. Try Google GIS OAuth2 Token Client (opens official accounts.google.com popup)
+    // 2. Try Google GIS OAuth2 Token Client (opens official accounts.google.com popup)
     if (this.googleTokenClient) {
       try {
         this.googleTokenClient.requestAccessToken({ prompt: 'select_account' });
@@ -1488,14 +1498,10 @@ class ArgusAuth {
       }
     }
 
-    // 2. Open genuine Google Accounts OAuth2 popup window
+    // 3. Open genuine Google Accounts OAuth2 popup window
     if (this.googleClientId) {
-      const popup = this.openGoogleAuthPopup();
-      if (popup) return;
+      this.openGoogleAuthPopup();
     }
-
-    // 3. Fallback to Google Access Gateway Chooser if popup blocked
-    this.openGoogleFallbackModal();
   }
 
   openGoogleAuthPopup(forceFocus = true) {
