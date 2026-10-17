@@ -1507,7 +1507,7 @@ class ArgusAuth {
   openGoogleAuthPopup(forceFocus = true) {
     if (!this.googleClientId) return null;
 
-    const redirectUri = window.location.origin + '/';
+    const redirectUri = window.location.origin;
     const state = Math.random().toString(36).substring(2);
     const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(this.googleClientId)}` +
