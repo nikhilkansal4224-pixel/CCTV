@@ -107,6 +107,17 @@ class MobileCameraStreamer {
         }
       });
 
+      // Handle Command Center force disconnect
+      this.socket.on('force-disconnect', () => {
+        console.log('[Mobile] Disconnected by Command Center');
+        if (this.stream) {
+          this.stream.getTracks().forEach(t => t.stop());
+        }
+        this.isStreaming = false;
+        this.updateStatus('DISCONNECTED BY COMMAND HUB', false);
+        alert('This camera feed was disconnected by the Command Center.');
+      });
+
     } catch (e) {
       console.error('[Mobile] Socket initialization error:', e);
     }
@@ -253,6 +264,8 @@ class MobileCameraStreamer {
 
       const w = this.video.videoWidth;
       const h = this.video.videoHeight;
+      const isPortrait = h > w;
+      const targetW = isPortrait ? 360 : 480;
       const targetH = Math.round((targetW / w) * h);
 
       if (frameCanvas.width !== targetW || frameCanvas.height !== targetH) {
@@ -266,6 +279,9 @@ class MobileCameraStreamer {
       if (this.socket && this.socket.connected) {
         this.socket.emit('stream-frame', {
           image: dataUrl,
+          isPortrait: isPortrait,
+          width: w,
+          height: h,
           timestamp: Date.now()
         });
         this.frameCount++;

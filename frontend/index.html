@@ -24,10 +24,10 @@
 
   <!-- Surrealism Dynamic Canvas & Atmospheric Glow Background -->
   <canvas id="surreal-canvas"></canvas>
-  <div class="surreal-glow-orb surreal-orb-1"></div>
-  <div class="surreal-glow-orb surreal-orb-2"></div>
-  <div class="surreal-glow-orb surreal-orb-3"></div>
-  <div class="surreal-mesh-grid"></div>
+  <div class="surreal-glow-orb surreal-orb-1" id="orb-1"></div>
+  <div class="surreal-glow-orb surreal-orb-2" id="orb-2"></div>
+  <div class="surreal-glow-orb surreal-orb-3" id="orb-3"></div>
+  <div class="surreal-mesh-grid" id="mesh-grid"></div>
 
   <!-- Command Center Header -->
   <header class="app-header">
@@ -50,7 +50,7 @@
         <span id="system-status-text">SURVEILLANCE SECURE</span>
       </div>
 
-      <button class="btn-primary" id="btn-add-webcam">
+      <button class="btn-primary" id="btn-add-webcam" title="Connect Local Laptop Webcam">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
           <circle cx="12" cy="13" r="4"/>
@@ -58,11 +58,27 @@
         <span>Add Laptop Cam</span>
       </button>
 
-      <button class="btn-primary" id="btn-add-sim">
+      <button class="btn-primary" id="btn-add-sim" title="Add Horizontal Camera Feed">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="5 3 19 12 5 21 5 3"/>
         </svg>
-        <span>Add Simulation Feed</span>
+        <span>Add Horizontal Feed</span>
+      </button>
+
+      <button class="btn-primary" id="btn-add-sim-vertical" style="background: linear-gradient(135deg, rgba(255, 0, 127, 0.25), rgba(138, 43, 226, 0.35)); border-color: rgba(255, 0, 127, 0.4);" title="Add Vertical Mobile Camera Feed">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+          <line x1="12" y1="18" x2="12.01" y2="18"/>
+        </svg>
+        <span>Add Vertical Cam</span>
+      </button>
+
+      <button class="btn-primary" id="btn-open-settings" style="background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2);" title="Open Settings & Preferences">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>Settings</span>
       </button>
     </div>
   </header>
@@ -70,67 +86,46 @@
   <!-- Bento Grid Main Surveillance Deck -->
   <main class="bento-container">
 
-    <!-- BENTO 1: Hero Primary Surveillance Viewport (8 Columns x 2 Rows) -->
-    <section class="glass-panel bento-hero">
+    <!-- BENTO 1: Auto-Grid Multi-Camera Surveillance Matrix (Auto-Sized Feeds) -->
+    <section class="glass-panel bento-hero" id="bento-hero-panel">
       <div class="card-header">
         <div class="card-title-group">
           <div class="card-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-              <polyline points="21 7 12 16 8 12"/>
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="9" y1="21" x2="9" y2="9"/>
             </svg>
           </div>
-          <span class="card-title">Primary Surveillance Viewport</span>
+          <div>
+            <span class="card-title">Multi-Camera Surveillance Matrix</span>
+            <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">AUTO-BALANCED GRID • MAX SIZE MODE</div>
+          </div>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <span class="card-badge" id="hero-cam-type">LIVE PRIMARY</span>
-          <button class="filter-btn" id="btn-snapshot-hero" title="Capture Snapshot">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-              <circle cx="12" cy="13" r="4"/>
+
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span class="card-badge" id="matrix-active-count-badge">0 CAMERAS ACTIVE</span>
+          <button class="filter-btn" id="btn-toggle-fullscreen-matrix" title="Maximize Viewport">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
             </svg>
-            Snapshot
+            <span id="label-fullscreen">Fullscreen Matrix</span>
           </button>
         </div>
       </div>
 
-      <div class="card-body" style="padding: 14px 20px;">
-        <div class="surveillance-viewport-wrapper" id="surveillance-viewport">
-          <!-- Video Source -->
-          <video id="hero-video" class="hero-video-feed" autoplay playsinline muted></video>
-          <!-- Canvas Frame Source (For mobile frame fallback or simulation) -->
-          <canvas id="hero-canvas" class="hero-canvas-feed" style="display: none;"></canvas>
-          <!-- AI Human Movement Bounding Boxes & HUD overlay -->
-          <canvas id="hero-detection-overlay" class="hero-detection-overlay"></canvas>
-
-          <!-- Surveillance Overlays -->
-          <div class="hud-scan-line"></div>
-          <div class="hud-crosshair-center"></div>
-
-          <!-- Top Viewport Information Bar -->
-          <div class="viewport-info-bar">
-            <div class="viewport-cam-label">
-              <span class="rec-pulse-dot"></span>
-              <span id="hero-cam-title">CONNECTING FEED...</span>
-            </div>
-            <div class="viewport-cam-label">
-              <span style="color: var(--neon-cyan);">AI HUMAN TRACKING</span>
-              <span style="color: rgba(255,255,255,0.3);">|</span>
-              <span id="ai-model-badge">COCO-SSD MobileNet</span>
-            </div>
-          </div>
-
-          <!-- Bottom Viewport Filter Controls -->
-          <div class="viewport-controls-bar">
-            <div class="filter-pills-group">
-              <button class="filter-btn active" data-filter="normal">Normal</button>
-              <button class="filter-btn" data-filter="night">Night Vision</button>
-              <button class="filter-btn" data-filter="thermal">Thermal IR</button>
-              <button class="filter-btn" data-filter="surreal">Surrealist Tint</button>
-            </div>
-            <div class="viewport-cam-label" style="font-size: 11px;">
-              <span>TARGETING: AUTO</span>
-            </div>
+      <div class="card-body" style="padding: 14px 18px; display: flex; flex-direction: column;">
+        <!-- Dynamic Auto-Sizing Surveillance Grid Container -->
+        <div class="surveillance-matrix-grid" id="surveillance-matrix-grid" data-count="0">
+          <div class="empty-matrix-placeholder" id="matrix-empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+            <div style="font-size: 15px; font-weight: 600; color: #fff;">No Camera Streams Connected</div>
+            <p style="font-size: 12px; max-width: 380px; color: var(--text-muted); line-height: 1.5;">
+              Scan the QR Code on your smartphone or click "+ Add Laptop Cam" / "+ Add Simulation Feed" to activate surveillance feeds.
+            </p>
           </div>
         </div>
       </div>
@@ -160,7 +155,7 @@
           </div>
           <div class="qr-details">
             <p class="qr-hint">
-              Scan this QR code with any smartphone camera on your Wi-Fi to transform it into an AI CCTV sensor node.
+              Scan this QR code with any smartphone on your Wi-Fi to transform it into an AI CCTV sensor node.
             </p>
             <div class="url-copy-box">
               <span class="url-text" id="camera-stream-url">Detecting local URL...</span>
@@ -229,29 +224,7 @@
       </div>
     </section>
 
-    <!-- BENTO 4: Multi-Camera Sensor Dock Carousel (12 Columns) -->
-    <section class="glass-panel bento-cameras">
-      <div class="card-header">
-        <div class="card-title-group">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 7l-7 5 7 5V7z"/>
-              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-            </svg>
-          </div>
-          <span class="card-title">Connected Optical Nodes & Camera Grid</span>
-        </div>
-        <span class="card-badge">CLICK THUMBNAIL TO SWITCH HERO</span>
-      </div>
-
-      <div class="card-body">
-        <div class="camera-cards-grid" id="camera-cards-grid">
-          <!-- Dynamic camera thumbnails are rendered here -->
-        </div>
-      </div>
-    </section>
-
-    <!-- BENTO 5: Incident Timeline & Snapshot Reel (7 Columns) -->
+    <!-- BENTO 4: Incident Timeline & Snapshot Reel (7 Columns) -->
     <section class="glass-panel bento-incidents">
       <div class="card-header">
         <div class="card-title-group">
@@ -275,7 +248,7 @@
       </div>
     </section>
 
-    <!-- BENTO 6: Sensor Control & AI Tuning Deck (5 Columns) -->
+    <!-- BENTO 5: Sensor Control & AI Tuning Deck (5 Columns) -->
     <section class="glass-panel bento-controls">
       <div class="card-header">
         <div class="card-title-group">
@@ -337,6 +310,238 @@
     </section>
 
   </main>
+
+  <!-- GLASSMORPHIC SETTINGS MODAL & PREFERENCES PAGE -->
+  <div class="settings-modal-backdrop" id="settings-modal">
+    <div class="settings-modal-card">
+      <div class="settings-modal-header">
+        <div class="settings-title-group">
+          <div class="card-icon" style="background: rgba(0, 240, 255, 0.15);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </div>
+          <div>
+            <h2 class="settings-modal-title">Surveillance System Preferences</h2>
+            <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">AETHER PROTOCOL CONFIGURATION</div>
+          </div>
+        </div>
+        <button class="btn-close-modal" id="btn-close-settings-modal" title="Close Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="settings-modal-body">
+        <!-- Sidebar Navigation Tabs -->
+        <nav class="settings-tabs-sidebar">
+          <button class="settings-tab-btn active" data-tab="tab-detection">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+            </svg>
+            <span>AI Detection</span>
+          </button>
+
+          <button class="settings-tab-btn" data-tab="tab-grid">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            <span>Camera Grid</span>
+          </button>
+
+          <button class="settings-tab-btn" data-tab="tab-surrealism">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+            </svg>
+            <span>Surrealism Visuals</span>
+          </button>
+
+          <button class="settings-tab-btn" data-tab="tab-system">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+              <line x1="6" y1="6" x2="6.01" y2="6"/>
+              <line x1="6" y1="18" x2="6.01" y2="18"/>
+            </svg>
+            <span>System & Network</span>
+          </button>
+        </nav>
+
+        <!-- Tab Content Panes -->
+        <div class="settings-content-pane">
+          <!-- TAB 1: AI Detection -->
+          <div class="settings-section-view active" id="tab-detection">
+            <div class="settings-group-card">
+              <div class="settings-group-title">Neural Human Recognition Parameters</div>
+              
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Detection Confidence Threshold</span>
+                  <span class="settings-item-desc">Minimum AI confidence score required to flag a human subject.</span>
+                </div>
+                <span id="settings-label-conf" style="font-family: monospace; color: var(--neon-cyan); font-weight: 700;">55%</span>
+              </div>
+              <input type="range" class="slider-custom" id="settings-slider-conf" min="30" max="95" value="55">
+
+              <div class="settings-row" style="margin-top: 10px;">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Movement Vector Sensitivity</span>
+                  <span class="settings-item-desc">Pixel centroid displacement required to trigger movement alert.</span>
+                </div>
+                <span id="settings-label-sens" style="font-family: monospace; color: var(--neon-cyan); font-weight: 700;">15 px</span>
+              </div>
+              <input type="range" class="slider-custom" id="settings-slider-sens" min="5" max="50" value="15">
+            </div>
+
+            <div class="settings-group-card">
+              <div class="settings-group-title">Acoustic Warning System</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Synthesized Web Audio Radar Siren</span>
+                  <span class="settings-item-desc">Emit harmonic acoustic alert tone when human intrusion is verified.</span>
+                </div>
+                <label class="switch-label">
+                  <input type="checkbox" id="settings-toggle-sound" checked>
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: Camera Grid -->
+          <div class="settings-section-view" id="tab-grid">
+            <div class="settings-group-card">
+              <div class="settings-group-title">Surveillance Matrix Auto-Layout</div>
+              
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Auto Maximize All Active Cameras</span>
+                  <span class="settings-item-desc">Automatically balances all connected cameras in optimal grid rows & columns at their maximum sizes.</span>
+                </div>
+                <label class="switch-label">
+                  <input type="checkbox" id="settings-toggle-auto-max" checked>
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Auto-Focus on Movement Breach</span>
+                  <span class="settings-item-desc">Temporarily highlight or expand the specific camera that detects human movement.</span>
+                </div>
+                <label class="switch-label">
+                  <input type="checkbox" id="settings-toggle-autofocus" checked>
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-group-card">
+              <div class="settings-group-title">Feed Video Quality</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Frame Relay Fallback Rate</span>
+                  <span class="settings-item-desc">Adjust transmission frequency for mobile camera stream fallback.</span>
+                </div>
+                <span style="font-family: monospace; color: var(--neon-cyan);">20 FPS</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: Surrealism Visuals -->
+          <div class="settings-section-view" id="tab-surrealism">
+            <div class="settings-group-card">
+              <div class="settings-group-title">Surrealist Canvas Atmosphere</div>
+              
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Omniscient Celestial Eye</span>
+                  <span class="settings-item-desc">Interactive celestial eye with golden orbital rings tracking user gaze.</span>
+                </div>
+                <label class="switch-label">
+                  <input type="checkbox" id="settings-toggle-eye" checked>
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Salvador Dalí Melting Gears</span>
+                  <span class="settings-item-desc">Floating surrealist clock gear mechanisms drifting in cosmic void.</span>
+                </div>
+                <label class="switch-label">
+                  <input type="checkbox" id="settings-toggle-gears" checked>
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Ambient Bioluminescent Orbs</span>
+                  <span class="settings-item-desc">Soft chromatic ambient nebula glowing behind frosted glass panels.</span>
+                </div>
+                <label class="switch-label">
+                  <input type="checkbox" id="settings-toggle-orbs" checked>
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: System & Network -->
+          <div class="settings-section-view" id="tab-system">
+            <div class="settings-group-card">
+              <div class="settings-group-title">Network & Node Endpoints</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Local LAN Address</span>
+                  <span class="settings-item-desc">Host address used for pairing mobile devices over Wi-Fi.</span>
+                </div>
+                <span id="settings-lan-ip" style="font-family: monospace; color: var(--neon-cyan);">10.12.55.163:5001</span>
+              </div>
+            </div>
+
+            <div class="settings-group-card">
+              <div class="settings-group-title">Data Management</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Incident Log Reset</span>
+                  <span class="settings-item-desc">Clear all recorded intrusion logs and thumbnail snapshots.</span>
+                </div>
+                <button class="btn-secondary" id="btn-settings-clear-logs" style="border-color: rgba(255, 0, 85, 0.4); color: var(--neon-crimson);">
+                  Clear Logs
+                </button>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-item-title">Disconnect All Cameras</span>
+                  <span class="settings-item-desc">Force disconnect all mobile, webcam, and simulated optical streams.</span>
+                </div>
+                <button class="btn-secondary" id="btn-disconnect-all-cams" style="border-color: rgba(255, 0, 85, 0.4); color: var(--neon-crimson);">
+                  Remove All Cameras
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-modal-footer">
+        <button class="btn-secondary" id="btn-reset-defaults">Reset to Defaults</button>
+        <button class="btn-primary" id="btn-save-settings">Save & Apply Changes</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Application Logic Scripts -->
   <script src="js/surrealism.js"></script>

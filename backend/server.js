@@ -91,6 +91,22 @@ app.get('/api/cameras', (req, res) => {
   res.json({ cameras: list });
 });
 
+app.delete('/api/cameras/:id', (req, res) => {
+  const { id } = req.params;
+  let removed = false;
+  for (const [sId, cam] of connectedCameras.entries()) {
+    if (cam.id === id || sId === id) {
+      io.to(sId).emit('force-disconnect');
+      connectedCameras.delete(sId);
+      io.to('dashboards').emit('camera-left', { cameraId: cam.id });
+      io.to('dashboards').emit('camera-list-update', Array.from(connectedCameras.values()));
+      removed = true;
+      break;
+    }
+  }
+  res.json({ success: true, removed, cameraId: id });
+});
+
 app.post('/api/alerts', (req, res) => {
   const { cameraId, cameraName, confidence, type, snapshot, message } = req.body;
   
@@ -170,6 +186,9 @@ io.on('connection', (socket) => {
         cameraId: cam.id,
         cameraName: cam.name,
         image: data.image,
+        isPortrait: !!data.isPortrait,
+        width: data.width,
+        height: data.height,
         timestamp: data.timestamp || Date.now()
       });
     }
@@ -223,6 +242,20 @@ io.on('connection', (socket) => {
     for (const [sId, cam] of connectedCameras.entries()) {
       if (cam.id === targetCameraId || sId === targetCameraId) {
         io.to(sId).emit('remote-control', { action, value });
+        break;
+      }
+    }
+  });
+
+  // Explicit camera removal requested by dashboard
+  socket.on('remove-camera', ({ cameraId }) => {
+    for (const [sId, cam] of connectedCameras.entries()) {
+      if (cam.id === cameraId || sId === cameraId) {
+        console.log(`[Camera] Disconnecting camera: ${cam.name} (${cam.id})`);
+        io.to(sId).emit('force-disconnect');
+        connectedCameras.delete(sId);
+        io.to('dashboards').emit('camera-left', { cameraId: cam.id });
+        io.to('dashboards').emit('camera-list-update', Array.from(connectedCameras.values()));
         break;
       }
     }

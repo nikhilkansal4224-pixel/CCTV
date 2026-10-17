@@ -1,6 +1,11 @@
 /**
  * CCTV Command Center Dashboard Controller
- * Integrates Bento Grid management, Multi-Camera Hub, AI Human Detection, and QR Code Generation
+ * Features:
+ * - Dynamic Multi-Camera Auto-Grid Matrix (auto-adapts all cameras to max size)
+ * - Individual Camera Remove (trash) buttons & solo-focus mode
+ * - Concurrent AI Human Movement Detection across all active cameras
+ * - Glassmorphic Settings Modal with persistence & live surrealism toggles
+ * - Dynamic QR Code Mobile Pairing & Socket.io WebRTC management
  */
 
 class DashboardController {
@@ -9,27 +14,23 @@ class DashboardController {
     this.cameraManager = null;
     this.detector = null;
 
-    this.activeHeroCameraId = null;
+    // Active matrix cells: cameraId -> { cellEl, videoEl, canvasEl, overlayCanvasEl, filterIndex }
+    this.matrixCells = new Map();
+    this.activeSoloCameraId = null;
     this.animationLoopId = null;
-    this.currentFilter = 'normal';
+    this.filterModes = ['normal', 'night', 'thermal', 'surreal'];
 
-    // Telemetry state
-    this.telemetry = {
-      humanCount: 0,
-      movementSpeed: 0,
-      threatActive: false,
-      totalIncidents: 0
-    };
+    // Settings preferences with localStorage persistence
+    this.settings = this.loadSettings();
 
     // DOM Elements
-    this.heroVideo = document.getElementById('hero-video');
-    this.heroCanvas = document.getElementById('hero-canvas');
-    this.heroOverlay = document.getElementById('hero-detection-overlay');
-    this.heroCamTitle = document.getElementById('hero-cam-title');
-    this.heroCamType = document.getElementById('hero-cam-type');
-    this.heroViewport = document.getElementById('surveillance-viewport');
+    this.matrixGrid = document.getElementById('surveillance-matrix-grid');
+    this.matrixEmptyState = document.getElementById('matrix-empty-state');
+    this.matrixActiveBadge = document.getElementById('matrix-active-count-badge');
+    this.bentoHeroPanel = document.getElementById('bento-hero-panel');
+    this.btnToggleFullscreen = document.getElementById('btn-toggle-fullscreen-matrix');
+    this.labelFullscreen = document.getElementById('label-fullscreen');
 
-    this.cameraCardsGrid = document.getElementById('camera-cards-grid');
     this.cameraCountBadge = document.getElementById('camera-count-badge');
     this.incidentList = document.getElementById('incident-list');
     this.incidentCountBadge = document.getElementById('incident-count-badge');
@@ -47,14 +48,81 @@ class DashboardController {
     this.btnAddSim = document.getElementById('btn-add-sim');
     this.btnSoundToggle = document.getElementById('btn-toggle-sound');
     this.btnClearAlerts = document.getElementById('btn-clear-alerts');
-    this.btnSnapshotHero = document.getElementById('btn-snapshot-hero');
 
     this.sliderConfidence = document.getElementById('slider-confidence');
     this.sliderSensitivity = document.getElementById('slider-sensitivity');
     this.valConfidence = document.getElementById('label-val-confidence');
     this.valSensitivity = document.getElementById('label-val-sensitivity');
 
+    // Settings Modal Elements
+    this.settingsModal = document.getElementById('settings-modal');
+    this.btnOpenSettings = document.getElementById('btn-open-settings');
+    this.btnCloseSettings = document.getElementById('btn-close-settings-modal');
+    this.btnSaveSettings = document.getElementById('btn-save-settings');
+    this.btnResetDefaults = document.getElementById('btn-reset-defaults');
+    this.btnClearSettingsLogs = document.getElementById('btn-settings-clear-logs');
+    this.btnDisconnectAll = document.getElementById('btn-disconnect-all-cams');
+
     this.init();
+  }
+
+  loadSettings() {
+    const defaultSettings = {
+      confidence: 55,
+      sensitivity: 15,
+      soundEnabled: true,
+      autoMaxGrid: true,
+      autoFocusBreach: true,
+      showEye: true,
+      showGears: true,
+      showOrbs: true
+    };
+    try {
+      const stored = localStorage.getItem('cctv_system_settings');
+      return stored ? { ...defaultSettings, ...JSON.parse(stored) } : defaultSettings;
+    } catch (e) {
+      return defaultSettings;
+    }
+  }
+
+  saveSettings(newSettings) {
+    this.settings = { ...this.settings, ...newSettings };
+    localStorage.setItem('cctv_system_settings', JSON.stringify(this.settings));
+    this.applySettingsToApp();
+  }
+
+  applySettingsToApp() {
+    // Apply to Detector
+    if (this.detector) {
+      this.detector.minConfidence = this.settings.confidence / 100;
+      this.detector.motionSensitivity = this.settings.sensitivity;
+      this.detector.soundEnabled = this.settings.soundEnabled;
+    }
+
+    // Apply to sliders in main UI
+    if (this.sliderConfidence) {
+      this.sliderConfidence.value = this.settings.confidence;
+      this.valConfidence.innerText = `${this.settings.confidence}%`;
+    }
+    if (this.sliderSensitivity) {
+      this.sliderSensitivity.value = this.settings.sensitivity;
+      this.valSensitivity.innerText = `${this.settings.sensitivity} px`;
+    }
+
+    // Apply sound button state
+    if (this.btnSoundToggle) {
+      this.btnSoundToggle.classList.toggle('active', this.settings.soundEnabled);
+      this.btnSoundToggle.querySelector('span').innerText = this.settings.soundEnabled ? 'Audio Siren (ON)' : 'Audio Siren (OFF)';
+    }
+
+    // Apply to Surrealism visual elements
+    if (window.surrealEngine) {
+      window.surrealEngine.showEye = this.settings.showEye;
+      window.surrealEngine.showGears = this.settings.showGears;
+    }
+    document.querySelectorAll('.surreal-glow-orb').forEach(orb => {
+      orb.style.display = this.settings.showOrbs ? 'block' : 'none';
+    });
   }
 
   async init() {
@@ -62,15 +130,20 @@ class DashboardController {
     this.initDetector();
     this.initCameraManager();
     this.bindControls();
+    this.bindSettingsModal();
+    this.applySettingsToApp();
     await this.fetchNetworkInfo();
     await this.fetchAlertHistory();
 
-    // Default start with a simulated camera so the user immediately sees working AI detection!
+    // Start with 1 default simulated camera so user immediately sees working AI detection
     setTimeout(() => {
       if (this.cameraManager.cameras.size === 0) {
-        this.cameraManager.addSimulatedFeed('Corridor Cam [AI Demo]');
+        this.cameraManager.addSimulatedFeed('Corridor Cam [Simulated #01]');
       }
     }, 600);
+
+    // Launch continuous detection loop for all matrix cells
+    this.startMatrixDetectionLoop();
   }
 
   initSocket() {
@@ -98,64 +171,454 @@ class DashboardController {
 
   initDetector() {
     this.detector = new HumanMotionDetector({
-      minConfidence: parseFloat(this.sliderConfidence.value) / 100,
-      motionSensitivity: parseInt(this.sliderSensitivity.value),
+      minConfidence: this.settings.confidence / 100,
+      motionSensitivity: this.settings.sensitivity,
       onAlert: (alertData) => this.handleDetectionAlert(alertData),
       onTelemetryUpdate: ({ status, model }) => {
-        const badge = document.getElementById('ai-model-badge');
-        if (badge) badge.innerText = model;
+        console.log('[AI Detector Status]', status, model);
       }
     });
+    this.detector.soundEnabled = this.settings.soundEnabled;
   }
 
   initCameraManager() {
     this.cameraManager = new CameraManager(this.socket);
 
     this.cameraManager.onCameraAdded = (camera) => {
-      this.renderCameraCard(camera);
-      this.updateCameraCount();
-      if (!this.activeHeroCameraId) {
-        this.setHeroCamera(camera.id);
-      }
+      this.addCameraToMatrixGrid(camera);
+      this.updateGridMetrics();
     };
 
     this.cameraManager.onCameraRemoved = (cameraId) => {
-      const card = document.getElementById(`cam-card-${cameraId}`);
-      if (card) card.remove();
-      this.updateCameraCount();
-
-      if (this.activeHeroCameraId === cameraId) {
-        const remaining = Array.from(this.cameraManager.cameras.keys());
-        if (remaining.length > 0) {
-          this.setHeroCamera(remaining[0]);
-        } else {
-          this.resetHeroViewport();
-        }
-      }
+      this.removeCameraFromMatrixGrid(cameraId);
+      this.updateGridMetrics();
     };
 
-    this.cameraManager.onRemoteFrame = (cameraId, imageDataUrl) => {
-      // Update thumbnail preview
-      const thumbImg = document.getElementById(`cam-thumb-img-${cameraId}`);
-      if (thumbImg) {
-        thumbImg.src = imageDataUrl;
-      }
-
-      // If this camera is the hero, draw image onto hero canvas
-      if (this.activeHeroCameraId === cameraId) {
+    this.cameraManager.onRemoteFrame = (cameraId, imageDataUrl, isPortrait) => {
+      const cell = this.matrixCells.get(cameraId);
+      if (cell && cell.canvasEl) {
         const img = new Image();
         img.onload = () => {
-          this.heroVideo.style.display = 'none';
-          this.heroCanvas.style.display = 'block';
-          this.heroCanvas.width = img.width;
-          this.heroCanvas.height = img.height;
-          const ctx = this.heroCanvas.getContext('2d');
+          if (cell.videoEl) cell.videoEl.style.display = 'none';
+          cell.canvasEl.style.display = 'block';
+          cell.canvasEl.width = img.width;
+          cell.canvasEl.height = img.height;
+          const ctx = cell.canvasEl.getContext('2d');
           ctx.drawImage(img, 0, 0);
-          this.processDetectionFrame(this.heroCanvas);
+
+          const portrait = isPortrait !== undefined ? isPortrait : img.height > img.width;
+          if (cell.isPortrait !== portrait) {
+            cell.isPortrait = portrait;
+            cell.cellEl.classList.toggle('is-portrait', portrait);
+            if (portrait && !cell.cellEl.classList.contains('aspect-cover')) {
+              cell.cellEl.classList.add('aspect-contain');
+            }
+            const badge = cell.cellEl.querySelector(`#aspect-badge-${cameraId}`);
+            if (badge) {
+              badge.className = `aspect-badge ${portrait ? 'portrait' : 'landscape'}`;
+              badge.innerText = portrait ? '9:16 VERTICAL' : '16:9 HORIZONTAL';
+            }
+            this.recalculateMatrixLayout();
+          }
         };
         img.src = imageDataUrl;
       }
     };
+  }
+
+  /**
+   * Dynamically adds and maximizes a camera inside the Auto-Grid Surveillance Matrix
+   */
+  addCameraToMatrixGrid(camera) {
+    if (this.matrixCells.has(camera.id)) return;
+
+    if (this.matrixEmptyState) {
+      this.matrixEmptyState.style.display = 'none';
+    }
+
+    const cell = document.createElement('div');
+    cell.className = 'matrix-camera-cell';
+    cell.id = `matrix-cell-${camera.id}`;
+
+    // Header HUD with camera info & Action buttons (Remove, Solo Focus, Snapshot, Filter)
+    cell.innerHTML = `
+      <div class="matrix-cell-header">
+        <div class="matrix-cell-title-pill">
+          <span class="status-indicator-dot" style="width:7px; height:7px;"></span>
+          <span class="cam-cell-name">${camera.name}</span>
+          <span style="opacity:0.5;">|</span>
+          <span style="font-size:10px; color:var(--neon-cyan);">${camera.type.toUpperCase()}</span>
+          <span class="aspect-badge ${camera.canvas && camera.canvas.height > camera.canvas.width ? 'portrait' : 'landscape'}" id="aspect-badge-${camera.id}">
+            ${camera.canvas && camera.canvas.height > camera.canvas.width ? '9:16 VERTICAL' : '16:9 HORIZONTAL'}
+          </span>
+        </div>
+
+        <div class="matrix-cell-actions">
+          <!-- Fit / Fill Mode Toggle for Vertical/Horizontal feeds -->
+          <button class="btn-cam-action" id="btn-aspect-${camera.id}" title="Toggle Fit / Fill Mode">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+              <line x1="9" y1="18" x2="15" y2="18"/>
+            </svg>
+          </button>
+
+          <!-- Vision Filter Toggle -->
+          <button class="btn-cam-action" id="btn-filter-${camera.id}" title="Toggle Vision Filter (Night/Thermal/Surreal)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M2 12c2.5-5 6.5-8 10-8s7.5 3 10 8c-2.5 5-6.5 8-10 8s-7.5-3-10-8z"/>
+            </svg>
+          </button>
+
+          <!-- Snapshot Button -->
+          <button class="btn-cam-action" id="btn-snap-${camera.id}" title="Capture High-Res Snapshot">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </button>
+
+          <!-- Solo Focus / Maximize Button -->
+          <button class="btn-cam-action" id="btn-solo-${camera.id}" title="Solo Maximize Feed">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 3 21 3 21 9"/>
+              <polyline points="9 21 3 21 3 15"/>
+              <line x1="21" y1="3" x2="14" y2="10"/>
+              <line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
+
+          <!-- Remove Camera Button (User requested) -->
+          <button class="btn-cam-action danger" id="btn-remove-${camera.id}" title="Remove / Disconnect Camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              <line x1="10" y1="11" x2="10" y2="17"/>
+              <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Stream Surface -->
+      <video id="matrix-video-${camera.id}" autoplay playsinline muted style="${camera.stream ? 'display:block;' : 'display:none;'}"></video>
+      <canvas id="matrix-feed-canvas-${camera.id}" class="matrix-feed-canvas" style="${camera.canvas || !camera.stream ? 'display:block;' : 'display:none;'}"></canvas>
+
+      <!-- AI Human Movement Detection & HUD Targeting Canvas -->
+      <canvas id="matrix-overlay-${camera.id}" class="matrix-detection-canvas"></canvas>
+    `;
+
+    this.matrixGrid.appendChild(cell);
+
+    const videoEl = cell.querySelector(`#matrix-video-${camera.id}`);
+    const feedCanvasEl = cell.querySelector(`#matrix-feed-canvas-${camera.id}`);
+    const overlayCanvasEl = cell.querySelector(`#matrix-overlay-${camera.id}`);
+
+    if (camera.stream && videoEl) {
+      videoEl.srcObject = camera.stream;
+      videoEl.play().catch(e => console.warn('Stream play error:', e));
+    }
+
+    const cellObj = {
+      cameraId: camera.id,
+      cameraName: camera.name,
+      cellEl: cell,
+      videoEl,
+      canvasEl: feedCanvasEl,
+      overlayCanvasEl,
+      filterIndex: 0
+    };
+
+    this.matrixCells.set(camera.id, cellObj);
+
+    // Bind Cell Buttons
+    // 1. Remove Camera Button
+    const btnRemove = cell.querySelector(`#btn-remove-${camera.id}`);
+    btnRemove.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.confirmAndRemoveCamera(camera.id, camera.name);
+    });
+
+    // 2. Solo Focus Button
+    const btnSolo = cell.querySelector(`#btn-solo-${camera.id}`);
+    btnSolo.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleSoloFocus(camera.id);
+    });
+
+    // 3. Snapshot Button
+    const btnSnap = cell.querySelector(`#btn-snap-${camera.id}`);
+    btnSnap.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.takeCameraSnapshot(camera.id);
+    });
+
+    // 4. Vision Filter Toggle
+    const btnFilter = cell.querySelector(`#btn-filter-${camera.id}`);
+    btnFilter.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.cycleVisionFilter(cellObj);
+    });
+
+    // 5. Fit / Fill Aspect Mode Toggle
+    const btnAspect = cell.querySelector(`#btn-aspect-${camera.id}`);
+    btnAspect.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isContain = cell.classList.toggle('aspect-contain');
+      cell.classList.toggle('aspect-cover', !isContain);
+      btnAspect.classList.toggle('active', isContain);
+    });
+
+    this.recalculateMatrixLayout();
+  }
+
+  /**
+   * Recalculates CSS grid layout so all cameras auto-arrange in their maximum sizes
+   * Intelligently balances vertical vs horizontal camera counts
+   */
+  recalculateMatrixLayout() {
+    const count = this.matrixCells.size;
+    const portraitCount = Array.from(this.matrixCells.values()).filter(c => c.isPortrait).length;
+
+    this.matrixGrid.setAttribute('data-count', count.toString());
+    this.matrixGrid.setAttribute('data-portraits', portraitCount.toString());
+
+    if (count === 0 && this.matrixEmptyState) {
+      this.matrixEmptyState.style.display = 'flex';
+    } else if (this.matrixEmptyState) {
+      this.matrixEmptyState.style.display = 'none';
+    }
+
+    this.matrixActiveBadge.innerText = `${count} ${count === 1 ? 'CAMERA' : 'CAMERAS'} ACTIVE (${portraitCount} VERTICAL)`;
+  }
+
+  /**
+   * Remove Camera by ID (Local, remote phone, or simulated)
+   */
+  confirmAndRemoveCamera(cameraId, cameraName) {
+    console.log(`[Matrix] Removing camera: ${cameraName} (${cameraId})`);
+
+    // Emit remove event to server to notify phone or other dashboards
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('remove-camera', { cameraId });
+    }
+
+    // Remove from local camera manager
+    this.cameraManager.removeCamera(cameraId);
+    this.removeCameraFromMatrixGrid(cameraId);
+    this.updateGridMetrics();
+  }
+
+  removeCameraFromMatrixGrid(cameraId) {
+    const cellObj = this.matrixCells.get(cameraId);
+    if (cellObj) {
+      if (this.activeSoloCameraId === cameraId) {
+        this.activeSoloCameraId = null;
+      }
+      cellObj.cellEl.remove();
+      this.matrixCells.delete(cameraId);
+      this.recalculateMatrixLayout();
+    }
+  }
+
+  toggleSoloFocus(cameraId) {
+    const cell = this.matrixCells.get(cameraId);
+    if (!cell) return;
+
+    if (this.activeSoloCameraId === cameraId) {
+      // Exit Solo Focus
+      this.activeSoloCameraId = null;
+      cell.cellEl.classList.remove('solo-focus');
+      cell.cellEl.querySelector(`#btn-solo-${cameraId}`).classList.remove('active');
+    } else {
+      // Enter Solo Focus
+      if (this.activeSoloCameraId) {
+        const prev = this.matrixCells.get(this.activeSoloCameraId);
+        if (prev) {
+          prev.cellEl.classList.remove('solo-focus');
+          prev.cellEl.querySelector(`#btn-solo-${this.activeSoloCameraId}`).classList.remove('active');
+        }
+      }
+      this.activeSoloCameraId = cameraId;
+      cell.cellEl.classList.add('solo-focus');
+      cell.cellEl.querySelector(`#btn-solo-${cameraId}`).classList.add('active');
+    }
+  }
+
+  cycleVisionFilter(cellObj) {
+    cellObj.filterIndex = (cellObj.filterIndex + 1) % this.filterModes.length;
+    const mode = this.filterModes[cellObj.filterIndex];
+
+    const targets = [cellObj.videoEl, cellObj.canvasEl];
+    targets.forEach(el => {
+      if (!el) return;
+      el.classList.remove('filter-night', 'filter-thermal', 'filter-surreal');
+      if (mode !== 'normal') {
+        el.classList.add(`filter-${mode}`);
+      }
+    });
+
+    const btn = cellObj.cellEl.querySelector(`#btn-filter-${cellObj.cameraId}`);
+    if (btn) {
+      btn.classList.toggle('active', mode !== 'normal');
+    }
+  }
+
+  takeCameraSnapshot(cameraId) {
+    const cell = this.matrixCells.get(cameraId);
+    if (!cell) return;
+    const cam = this.cameraManager.cameras.get(cameraId);
+    const source = cam && cam.stream ? cell.videoEl : cam && cam.canvas ? cam.canvas : cell.canvasEl;
+
+    const snap = this.detector.captureSnapshot(
+      source,
+      source.videoWidth || source.width || 640,
+      source.videoHeight || source.height || 480
+    );
+
+    if (snap) {
+      const a = document.createElement('a');
+      a.href = snap;
+      a.download = `AETHER-${cam ? cam.name.replace(/\s+/g, '_') : 'Camera'}-${Date.now()}.jpg`;
+      a.click();
+    }
+  }
+
+  /**
+   * Continuous multi-feed AI detection across all active auto-maximized camera cells
+   */
+  startMatrixDetectionLoop() {
+    let totalDetectedInTick = 0;
+    let maxSpeedInTick = 0;
+
+    const runDetection = async () => {
+      totalDetectedInTick = 0;
+      maxSpeedInTick = 0;
+
+      for (const [camId, cellObj] of this.matrixCells.entries()) {
+        const cam = this.cameraManager.cameras.get(camId);
+        if (!cam) continue;
+
+        const source = cam.stream ? cellObj.videoEl : cam.canvas ? cam.canvas : cellObj.canvasEl;
+        if (!source) continue;
+
+        // Detect native feed orientation (Vertical vs Horizontal)
+        const srcW = source.videoWidth || source.naturalWidth || source.width || 0;
+        const srcH = source.videoHeight || source.naturalHeight || source.height || 0;
+        if (srcW > 0 && srcH > 0) {
+          const isPortrait = srcH > srcW;
+          if (cellObj.isPortrait !== isPortrait) {
+            cellObj.isPortrait = isPortrait;
+            cellObj.cellEl.classList.toggle('is-portrait', isPortrait);
+            if (isPortrait && !cellObj.cellEl.classList.contains('aspect-cover')) {
+              cellObj.cellEl.classList.add('aspect-contain');
+            }
+            const badge = cellObj.cellEl.querySelector(`#aspect-badge-${camId}`);
+            if (badge) {
+              badge.className = `aspect-badge ${isPortrait ? 'portrait' : 'landscape'}`;
+              badge.innerText = isPortrait ? '9:16 VERTICAL' : '16:9 HORIZONTAL';
+            }
+            this.recalculateMatrixLayout();
+          }
+        }
+
+        // Render simulation frame if it's a simulated feed
+        if (cam.canvas && cellObj.canvasEl) {
+          if (cellObj.canvasEl.width !== cam.canvas.width) {
+            cellObj.canvasEl.width = cam.canvas.width;
+            cellObj.canvasEl.height = cam.canvas.height;
+          }
+          const ctx = cellObj.canvasEl.getContext('2d');
+          ctx.drawImage(cam.canvas, 0, 0);
+        }
+
+        const telemetry = await this.detector.processFrame(
+          source,
+          cellObj.overlayCanvasEl,
+          camId,
+          cam.name
+        );
+
+        if (telemetry) {
+          totalDetectedInTick += telemetry.humanCount;
+          if (telemetry.movementSpeed > maxSpeedInTick) {
+            maxSpeedInTick = telemetry.movementSpeed;
+          }
+
+          if (telemetry.humanCount > 0 && this.settings.autoFocusBreach) {
+            cellObj.cellEl.classList.add('threat-detected');
+            setTimeout(() => cellObj.cellEl.classList.remove('threat-detected'), 1500);
+          }
+        }
+      }
+
+      this.humanCountVal.innerText = totalDetectedInTick;
+      this.movementSpeedVal.innerText = maxSpeedInTick;
+
+      if (totalDetectedInTick > 0) {
+        this.humanCountVal.classList.add('alert');
+        this.systemThreatIndicator.classList.add('threat');
+        this.systemStatusText.innerText = 'HUMAN PERIMETER BREACH';
+      } else {
+        this.humanCountVal.classList.remove('alert');
+        this.systemThreatIndicator.classList.remove('threat');
+        this.systemStatusText.innerText = 'SURVEILLANCE SECURE';
+      }
+
+      this.animationLoopId = requestAnimationFrame(runDetection);
+    };
+
+    this.animationLoopId = requestAnimationFrame(runDetection);
+  }
+
+  handleDetectionAlert(alertData) {
+    // Send to backend API
+    fetch('/api/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(alertData)
+    }).catch(e => console.warn('Alert post failed:', e));
+
+    // Flash Cell
+    const cell = this.matrixCells.get(alertData.cameraId);
+    if (cell) {
+      cell.cellEl.classList.add('threat-detected');
+      setTimeout(() => cell.cellEl.classList.remove('threat-detected'), 2500);
+    }
+  }
+
+  prependIncident(alert, increment = true) {
+    if (this.incidentList.querySelector('div[style*="Awaiting optical"]')) {
+      this.incidentList.innerHTML = '';
+    }
+
+    const item = document.createElement('div');
+    item.className = 'incident-item';
+    const timeStr = new Date(alert.timestamp).toLocaleTimeString();
+
+    item.innerHTML = `
+      <img class="incident-thumb" src="${alert.snapshot || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" fill="%231a2035"><rect width="60" height="40"/></svg>'}" alt="Incident">
+      <div class="incident-details">
+        <div class="incident-title">
+          <span>${alert.type}</span>
+          <span class="incident-conf-badge">${alert.confidence}% CONF</span>
+        </div>
+        <div class="incident-time">${alert.cameraName} • ${timeStr}</div>
+      </div>
+    `;
+
+    this.incidentList.prepend(item);
+
+    if (increment) {
+      this.incidentCountBadge.innerText = `${this.incidentList.children.length} INCIDENTS`;
+    }
+  }
+
+  updateGridMetrics() {
+    const count = this.matrixCells.size;
+    this.cameraCountBadge.innerText = `${count} ACTIVE`;
+    const countMetric = document.getElementById('val-active-cameras');
+    if (countMetric) countMetric.innerText = count;
   }
 
   async fetchNetworkInfo() {
@@ -164,6 +627,9 @@ class DashboardController {
       const data = await res.json();
       const mobileUrl = data.cameraStreamUrl;
       this.urlDisplay.innerText = mobileUrl;
+      
+      const lanEl = document.getElementById('settings-lan-ip');
+      if (lanEl) lanEl.innerText = `${data.localIp}:${data.port}`;
 
       // Render Dynamic QR Code
       this.qrBox.innerHTML = '';
@@ -177,7 +643,6 @@ class DashboardController {
           correctLevel: QRCode.CorrectLevel.M
         });
       } else {
-        // Fallback standard QR service if script fails
         this.qrBox.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=116x116&data=${encodeURIComponent(mobileUrl)}" alt="QR Code" style="width:100%;height:100%;border-radius:8px;" />`;
       }
     } catch (err) {
@@ -203,16 +668,24 @@ class DashboardController {
     // Add Local Webcam
     this.btnAddWebcam.addEventListener('click', async () => {
       try {
-        await this.cameraManager.addLocalWebcam('Laptop Integrated Cam');
+        await this.cameraManager.addLocalWebcam(`Laptop Cam #${Math.floor(Math.random() * 90 + 10)}`);
       } catch (err) {
         alert('Webcam permission denied or camera not found: ' + err.message);
       }
     });
 
-    // Add Simulated Corridor Feed
+    // Add Simulated Horizontal Feed
     this.btnAddSim.addEventListener('click', () => {
-      this.cameraManager.addSimulatedFeed(`Simulated Zone #${Math.floor(Math.random() * 90 + 10)}`);
+      this.cameraManager.addSimulatedFeed(`Simulated Zone #${Math.floor(Math.random() * 90 + 10)}`, false);
     });
+
+    // Add Simulated Vertical Mobile Feed (User requested vertical/horizontal management)
+    const btnSimVert = document.getElementById('btn-add-sim-vertical');
+    if (btnSimVert) {
+      btnSimVert.addEventListener('click', () => {
+        this.cameraManager.addSimulatedFeed(`Mobile Phone [9:16 Vertical #${Math.floor(Math.random() * 90 + 10)}]`, true);
+      });
+    }
 
     // Copy URL
     this.btnCopyUrl.addEventListener('click', () => {
@@ -226,9 +699,8 @@ class DashboardController {
 
     // Sound Alarm Toggle
     this.btnSoundToggle.addEventListener('click', () => {
-      const active = this.detector.soundEnabled = !this.detector.soundEnabled;
-      this.btnSoundToggle.classList.toggle('active', active);
-      this.btnSoundToggle.querySelector('span').innerText = active ? 'Audio Siren (ON)' : 'Audio Siren (OFF)';
+      const active = !this.settings.soundEnabled;
+      this.saveSettings({ soundEnabled: active });
     });
 
     // Clear Alerts
@@ -236,250 +708,130 @@ class DashboardController {
       await fetch('/api/alerts', { method: 'DELETE' });
     });
 
-    // Snapshot Hero
-    this.btnSnapshotHero.addEventListener('click', () => {
-      this.takeManualSnapshot();
-    });
-
     // Sliders
     this.sliderConfidence.addEventListener('input', (e) => {
-      const val = e.target.value;
+      const val = parseInt(e.target.value);
       this.valConfidence.innerText = `${val}%`;
-      this.detector.minConfidence = parseFloat(val) / 100;
+      this.saveSettings({ confidence: val });
     });
 
     this.sliderSensitivity.addEventListener('input', (e) => {
-      const val = e.target.value;
+      const val = parseInt(e.target.value);
       this.valSensitivity.innerText = `${val} px`;
-      this.detector.motionSensitivity = parseInt(val);
+      this.saveSettings({ sensitivity: val });
     });
 
-    // Filter Buttons
-    document.querySelectorAll('.filter-btn').forEach(btn => {
+    // Fullscreen Matrix Toggle
+    this.btnToggleFullscreen.addEventListener('click', () => {
+      const isFull = this.bentoHeroPanel.classList.toggle('fullscreen-matrix');
+      this.labelFullscreen.innerText = isFull ? 'Restore Grid' : 'Fullscreen Matrix';
+    });
+  }
+
+  /**
+   * Bind Settings Modal Tabs & Controls
+   */
+  bindSettingsModal() {
+    this.btnOpenSettings.addEventListener('click', () => {
+      this.populateSettingsInputs();
+      this.settingsModal.classList.add('open');
+    });
+
+    this.btnCloseSettings.addEventListener('click', () => {
+      this.settingsModal.classList.remove('open');
+    });
+
+    this.settingsModal.addEventListener('click', (e) => {
+      if (e.target === this.settingsModal) {
+        this.settingsModal.classList.remove('open');
+      }
+    });
+
+    // Tab buttons
+    document.querySelectorAll('.settings-tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.settings-section-view').forEach(s => s.classList.remove('active'));
+
         btn.classList.add('active');
-        const filter = btn.dataset.filter;
-        this.setVisionFilter(filter);
+        const tabId = btn.dataset.tab;
+        const targetView = document.getElementById(tabId);
+        if (targetView) targetView.classList.add('active');
       });
     });
-  }
 
-  setVisionFilter(filterName) {
-    this.currentFilter = filterName;
-    this.heroVideo.className = 'hero-video-feed';
-    this.heroCanvas.className = 'hero-canvas-feed';
-
-    if (filterName === 'night') {
-      this.heroVideo.classList.add('filter-night');
-      this.heroCanvas.classList.add('filter-night');
-    } else if (filterName === 'thermal') {
-      this.heroVideo.classList.add('filter-thermal');
-      this.heroCanvas.classList.add('filter-thermal');
-    } else if (filterName === 'surreal') {
-      this.heroVideo.classList.add('filter-surreal');
-      this.heroCanvas.classList.add('filter-surreal');
-    }
-  }
-
-  setHeroCamera(cameraId) {
-    this.activeHeroCameraId = cameraId;
-    const cam = this.cameraManager.cameras.get(cameraId);
-    if (!cam) return;
-
-    // Highlight active card
-    document.querySelectorAll('.camera-node-card').forEach(card => card.classList.remove('active-hero'));
-    const activeCard = document.getElementById(`cam-card-${cameraId}`);
-    if (activeCard) activeCard.classList.add('active-hero');
-
-    this.heroCamTitle.innerText = cam.name;
-    this.heroCamType.innerText = cam.type.toUpperCase();
-
-    if (cam.stream) {
-      this.heroCanvas.style.display = 'none';
-      this.heroVideo.style.display = 'block';
-      this.heroVideo.srcObject = cam.stream;
-      this.heroVideo.play().catch(e => console.warn('Hero video play prevented:', e));
-      this.startContinuousHeroDetection();
-    } else if (cam.canvas) {
-      // Direct canvas feed
-      this.heroVideo.style.display = 'none';
-      this.heroCanvas.style.display = 'block';
-      this.startContinuousHeroDetection();
-    }
-  }
-
-  resetHeroViewport() {
-    this.activeHeroCameraId = null;
-    this.heroVideo.srcObject = null;
-    this.heroCamTitle.innerText = 'NO FEED CONNECTED';
-    this.heroCamType.innerText = 'STANDBY';
-    const ctx = this.heroOverlay.getContext('2d');
-    ctx.clearRect(0, 0, this.heroOverlay.width, this.heroOverlay.height);
-  }
-
-  startContinuousHeroDetection() {
-    if (this.animationLoopId) {
-      cancelAnimationFrame(this.animationLoopId);
-    }
-
-    const loop = async () => {
-      const cam = this.cameraManager.cameras.get(this.activeHeroCameraId);
-      if (cam) {
-        const source = cam.stream ? this.heroVideo : cam.canvas ? cam.canvas : this.heroCanvas;
-        await this.processDetectionFrame(source);
-      }
-      this.animationLoopId = requestAnimationFrame(loop);
-    };
-
-    this.animationLoopId = requestAnimationFrame(loop);
-  }
-
-  async processDetectionFrame(sourceElement) {
-    if (!sourceElement || !this.detector) return;
-    const cam = this.cameraManager.cameras.get(this.activeHeroCameraId);
-    const camName = cam ? cam.name : 'Surveillance Feed';
-
-    const telemetry = await this.detector.processFrame(
-      sourceElement,
-      this.heroOverlay,
-      this.activeHeroCameraId,
-      camName
-    );
-
-    if (telemetry) {
-      this.humanCountVal.innerText = telemetry.humanCount;
-      this.movementSpeedVal.innerText = telemetry.movementSpeed;
-
-      if (telemetry.humanCount > 0) {
-        this.humanCountVal.classList.add('alert');
-        this.systemThreatIndicator.classList.add('threat');
-        this.systemStatusText.innerText = 'HUMAN PERIMETER BREACH';
-      } else {
-        this.humanCountVal.classList.remove('alert');
-        this.systemThreatIndicator.classList.remove('threat');
-        this.systemStatusText.innerText = 'SURVEILLANCE SECURE';
-      }
-    }
-  }
-
-  handleDetectionAlert(alertData) {
-    // Send to backend API
-    fetch('/api/alerts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(alertData)
-    }).catch(e => console.warn('Alert post failed:', e));
-
-    // Flash Hero Viewport
-    this.heroViewport.classList.add('threat-pulse');
-    setTimeout(() => this.heroViewport.classList.remove('threat-pulse'), 1200);
-
-    // Flash Camera Card
-    const card = document.getElementById(`cam-card-${alertData.cameraId}`);
-    if (card) {
-      card.classList.add('threat-detected');
-      setTimeout(() => card.classList.remove('threat-detected'), 2500);
-    }
-  }
-
-  prependIncident(alert, increment = true) {
-    if (this.incidentList.querySelector('div[style*="No incidents"]')) {
-      this.incidentList.innerHTML = '';
-    }
-
-    const item = document.createElement('div');
-    item.className = 'incident-item';
-    const timeStr = new Date(alert.timestamp).toLocaleTimeString();
-
-    item.innerHTML = `
-      <img class="incident-thumb" src="${alert.snapshot || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" fill="%231a2035"><rect width="60" height="40"/></svg>'}" alt="Incident">
-      <div class="incident-details">
-        <div class="incident-title">
-          <span>${alert.type}</span>
-          <span class="incident-conf-badge">${alert.confidence}% CONF</span>
-        </div>
-        <div class="incident-time">${alert.cameraName} • ${timeStr}</div>
-      </div>
-    `;
-
-    this.incidentList.prepend(item);
-
-    if (increment) {
-      this.telemetry.totalIncidents++;
-      this.incidentCountBadge.innerText = `${this.incidentList.children.length} INCIDENTS`;
-    }
-  }
-
-  renderCameraCard(camera) {
-    let existing = document.getElementById(`cam-card-${camera.id}`);
-    if (existing) return;
-
-    const card = document.createElement('div');
-    card.className = `camera-node-card ${camera.id === this.activeHeroCameraId ? 'active-hero' : ''}`;
-    card.id = `cam-card-${camera.id}`;
-
-    card.innerHTML = `
-      <div class="cam-preview-frame">
-        <span class="cam-badge-top">${camera.type.toUpperCase()}</span>
-        ${camera.stream ? `<video id="thumb-video-${camera.id}" autoplay playsinline muted></video>` : ''}
-        ${camera.canvas ? `<canvas id="thumb-canvas-${camera.id}"></canvas>` : ''}
-        ${!camera.stream && !camera.canvas ? `<img id="cam-thumb-img-${camera.id}" alt="Feed Preview" />` : ''}
-      </div>
-      <div class="cam-node-footer">
-        <div>
-          <div class="cam-node-name">${camera.name}</div>
-          <div class="cam-node-type">${camera.isLocal ? 'Integrated Sensor' : 'Mobile WebRTC Sensor'}</div>
-        </div>
-        <button class="filter-btn" style="padding: 4px 8px; font-size: 10px;">VIEW HERO</button>
-      </div>
-    `;
-
-    card.addEventListener('click', () => {
-      this.setHeroCamera(camera.id);
+    // Settings Sliders live labels
+    const sConf = document.getElementById('settings-slider-conf');
+    const sConfLabel = document.getElementById('settings-label-conf');
+    sConf.addEventListener('input', (e) => {
+      sConfLabel.innerText = `${e.target.value}%`;
     });
 
-    this.cameraCardsGrid.appendChild(card);
+    const sSens = document.getElementById('settings-slider-sens');
+    const sSensLabel = document.getElementById('settings-label-sens');
+    sSens.addEventListener('input', (e) => {
+      sSensLabel.innerText = `${e.target.value} px`;
+    });
 
-    // Bind stream or canvas to thumbnail
-    if (camera.stream) {
-      const thumbVid = document.getElementById(`thumb-video-${camera.id}`);
-      if (thumbVid) {
-        thumbVid.srcObject = camera.stream;
-        thumbVid.play().catch(e => console.warn(e));
+    // Save Settings Button
+    this.btnSaveSettings.addEventListener('click', () => {
+      const newSettings = {
+        confidence: parseInt(sConf.value),
+        sensitivity: parseInt(sSens.value),
+        soundEnabled: document.getElementById('settings-toggle-sound').checked,
+        autoMaxGrid: document.getElementById('settings-toggle-auto-max').checked,
+        autoFocusBreach: document.getElementById('settings-toggle-autofocus').checked,
+        showEye: document.getElementById('settings-toggle-eye').checked,
+        showGears: document.getElementById('settings-toggle-gears').checked,
+        showOrbs: document.getElementById('settings-toggle-orbs').checked
+      };
+
+      this.saveSettings(newSettings);
+      this.settingsModal.classList.remove('open');
+
+      // Visual Confirmation
+      const orig = this.btnSaveSettings.innerText;
+      this.btnSaveSettings.innerText = 'Saved!';
+      setTimeout(() => this.btnSaveSettings.innerText = orig, 1500);
+    });
+
+    // Reset Defaults
+    this.btnResetDefaults.addEventListener('click', () => {
+      localStorage.removeItem('cctv_system_settings');
+      this.settings = this.loadSettings();
+      this.populateSettingsInputs();
+      this.applySettingsToApp();
+      alert('Preferences reset to default configuration.');
+    });
+
+    // Clear Logs from Settings
+    this.btnClearSettingsLogs.addEventListener('click', async () => {
+      await fetch('/api/alerts', { method: 'DELETE' });
+      alert('Incident logs cleared.');
+    });
+
+    // Disconnect All Cameras
+    this.btnDisconnectAll.addEventListener('click', () => {
+      if (confirm('Disconnect all optical camera feeds?')) {
+        const allIds = Array.from(this.matrixCells.keys());
+        allIds.forEach(id => this.confirmAndRemoveCamera(id, 'Camera'));
       }
-    } else if (camera.canvas) {
-      const thumbCanvas = document.getElementById(`thumb-canvas-${camera.id}`);
-      if (thumbCanvas) {
-        thumbCanvas.width = 320;
-        thumbCanvas.height = 180;
-        const ctx = thumbCanvas.getContext('2d');
-        setInterval(() => {
-          ctx.drawImage(camera.canvas, 0, 0, 320, 180);
-        }, 100);
-      }
-    }
+    });
   }
 
-  updateCameraCount() {
-    const count = this.cameraManager.cameras.size;
-    this.cameraCountBadge.innerText = `${count} ACTIVE`;
-    const countMetric = document.getElementById('val-active-cameras');
-    if (countMetric) countMetric.innerText = count;
-  }
+  populateSettingsInputs() {
+    document.getElementById('settings-slider-conf').value = this.settings.confidence;
+    document.getElementById('settings-label-conf').innerText = `${this.settings.confidence}%`;
 
-  takeManualSnapshot() {
-    const cam = this.cameraManager.cameras.get(this.activeHeroCameraId);
-    const source = cam && cam.stream ? this.heroVideo : cam && cam.canvas ? cam.canvas : this.heroCanvas;
-    if (!source) return;
+    document.getElementById('settings-slider-sens').value = this.settings.sensitivity;
+    document.getElementById('settings-label-sens').innerText = `${this.settings.sensitivity} px`;
 
-    const snap = this.detector.captureSnapshot(source, source.videoWidth || source.width || 640, source.videoHeight || source.height || 480);
-    if (snap) {
-      const a = document.createElement('a');
-      a.href = snap;
-      a.download = `CCTV-Snapshot-${Date.now()}.jpg`;
-      a.click();
-    }
+    document.getElementById('settings-toggle-sound').checked = this.settings.soundEnabled;
+    document.getElementById('settings-toggle-auto-max').checked = this.settings.autoMaxGrid;
+    document.getElementById('settings-toggle-autofocus').checked = this.settings.autoFocusBreach;
+    document.getElementById('settings-toggle-eye').checked = this.settings.showEye;
+    document.getElementById('settings-toggle-gears').checked = this.settings.showGears;
+    document.getElementById('settings-toggle-orbs').checked = this.settings.showOrbs;
   }
 }
 

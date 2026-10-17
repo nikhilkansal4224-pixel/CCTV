@@ -21,6 +21,11 @@ class SurrealEngine {
     this.clockGears = [];
     this.time = 0;
     
+    this.showEye = true;
+    this.showGears = true;
+    this.showSpheres = true;
+    this.showConstellation = true;
+
     this.init();
     this.bindEvents();
     this.animate();
@@ -88,16 +93,16 @@ class SurrealEngine {
     this.ctx.clearRect(0, 0, this.width, this.height);
 
     // 1. Draw Surrealist Constellation Particles & Threads
-    this.drawConstellation();
+    if (this.showConstellation) this.drawConstellation();
 
     // 2. Draw Floating Surreal Fluid Spheres (Metaball aura)
-    this.drawFluidSpheres();
+    if (this.showSpheres) this.drawFluidSpheres();
 
     // 3. Draw Dalí Melting Gears
-    this.drawMeltingGears();
+    if (this.showGears) this.drawMeltingGears();
 
     // 4. Draw Omniscient Celestial Surveillance Eye
-    this.drawOmniscientEye();
+    if (this.showEye) this.drawOmniscientEye();
 
     requestAnimationFrame(() => this.animate());
   }
@@ -319,7 +324,7 @@ class SurrealEngine {
   }
 }
 
-// Auto instantiate on load
+// Auto instantiate on load & store reference
 document.addEventListener('DOMContentLoaded', () => {
-  new SurrealEngine('surreal-canvas');
+  window.surrealEngine = new SurrealEngine('surreal-canvas');
 });

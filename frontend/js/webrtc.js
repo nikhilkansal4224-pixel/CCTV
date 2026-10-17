@@ -56,7 +56,7 @@ class CameraManager {
         this.registerRemoteCamera({ id: cameraId, name: cameraName, type: 'mobile' });
       }
       if (this.onRemoteFrame) {
-        this.onRemoteFrame(cameraId, image);
+        this.onRemoteFrame(cameraId, image, data.isPortrait, data.width, data.height);
       }
     });
 
@@ -205,12 +205,14 @@ class CameraManager {
 
   /**
    * Add a Simulated Test Feed with canvas animation for instant demonstration
+   * @param {string} name 
+   * @param {boolean} isPortrait 
    */
-  addSimulatedFeed(name = 'Simulated Corridor Camera') {
+  addSimulatedFeed(name = 'Simulated Corridor Camera', isPortrait = false) {
     const id = 'sim-cam-' + Date.now();
     const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 360;
+    canvas.width = isPortrait ? 360 : 640;
+    canvas.height = isPortrait ? 640 : 360;
     const ctx = canvas.getContext('2d');
 
     let humanX = 40;
@@ -218,13 +220,13 @@ class CameraManager {
 
     function renderSimulatedScene() {
       // Background corridor
-      ctx.fillStyle = '#0a0d17';
+      ctx.fillStyle = isPortrait ? '#0a0d1a' : '#0a0d17';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Perspective grid lines
-      ctx.strokeStyle = 'rgba(0, 240, 255, 0.15)';
+      ctx.strokeStyle = isPortrait ? 'rgba(255, 0, 127, 0.15)' : 'rgba(0, 240, 255, 0.15)';
       ctx.lineWidth = 1;
-      for (let i = 0; i <= canvas.width; i += 60) {
+      for (let i = 0; i <= canvas.width; i += (isPortrait ? 40 : 60)) {
         ctx.beginPath();
         ctx.moveTo(i, canvas.height);
         ctx.lineTo(canvas.width / 2, canvas.height * 0.4);
