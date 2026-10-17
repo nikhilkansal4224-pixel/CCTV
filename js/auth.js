@@ -50,6 +50,7 @@ class ArgusAuth {
     this.btnSelectPasskey = document.getElementById('btnSelectPasskey');
     this.btnSelectEmailPin = document.getElementById('btnSelectEmailPin');
     this.btnSelectSecurityKey = document.getElementById('btnSelectSecurityKey');
+    this.btnQuick2FAProceed = document.getElementById('btnQuick2FAProceed');
     this.btn2FACancel = document.getElementById('btn2FACancel');
 
     // Step 2A: Passkey Elements
@@ -217,14 +218,25 @@ class ArgusAuth {
       });
     }
 
-    // Quick Demo Login buttons
+    // Quick Demo Login buttons (Instant 1-Click login to main console)
     document.querySelectorAll('.btn-demo-quick-login').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
         if (this.inputUserId) this.inputUserId.value = 'admin';
         if (this.inputPassword) this.inputPassword.value = 'password123';
-        this.submitCredentialsLogin();
+        await this.quickDemoLogin();
       });
     });
+
+    // Quick 2FA Proceed Button (Instant 1-Click verification on Step 2)
+    if (this.btnQuick2FAProceed) {
+      this.btnQuick2FAProceed.addEventListener('click', (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
+        this.executePasskeyVerification();
+      });
+    }
 
     // Navigation to and from Registration
     if (this.btnGoToReg) {
@@ -256,7 +268,7 @@ class ArgusAuth {
         this.playKeyClick();
         this.showView('2fa_email');
         if (this.inputEmailPin) {
-          this.inputEmailPin.value = '';
+          this.inputEmailPin.value = (this.currentChallenge && this.currentChallenge.demoEmailCode) || '';
           this.inputEmailPin.focus();
         }
       });
@@ -267,7 +279,7 @@ class ArgusAuth {
         this.playKeyClick();
         this.showView('2fa_security_key');
         if (this.inputSecurityKeyPin) {
-          this.inputSecurityKeyPin.value = '';
+          this.inputSecurityKeyPin.value = '7777';
           this.inputSecurityKeyPin.focus();
         }
       });
@@ -585,6 +597,50 @@ class ArgusAuth {
     }
   }
 
+  // Instant 1-Click Demo Login directly to main console
+  async quickDemoLogin() {
+    this.playRadarScan();
+    this.clearErrors();
+    this.setBtnLoading(this.btnSubmitLogin, true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'password123' })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Quick login failed');
+      }
+
+      // Auto-verify 2FA challenge with biometric passkey signature
+      if (data.requires2FA && data.challengeId) {
+        const verifyRes = await fetch('/api/auth/verify-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            challengeId: data.challengeId,
+            method: 'passkey',
+            code: 'passkey_verified'
+          })
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyRes.ok || !verifyData.success) {
+          throw new Error(verifyData.error || 'Quick demo verification failed');
+        }
+        this.onAuthSuccess(verifyData);
+        return;
+      }
+
+      this.onAuthSuccess(data);
+    } catch (err) {
+      this.showError(this.loginError, err.message);
+    } finally {
+      this.setBtnLoading(this.btnSubmitLogin, false);
+    }
+  }
+
   // STEP 1: Submit Username and Password
   async submitCredentialsLogin() {
     const username = this.inputUserId ? this.inputUserId.value.trim() : '';
@@ -651,25 +707,25 @@ class ArgusAuth {
       try {
         const isAvailable = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
         if (isAvailable && navigator.credentials && navigator.credentials.get) {
-          // Attempt WebAuthn prompt
           try {
             const challenge = new Uint8Array(32);
             window.crypto.getRandomValues(challenge);
             await navigator.credentials.get({
               publicKey: {
                 challenge,
-                timeout: 30000,
+                timeout: 5000,
                 userVerification: 'preferred'
               }
             });
-            await this.executePasskeyVerification();
-            return;
           } catch (e) {
-            // User can still tap the button manually
+            // User cancelled or platform authenticator bypassed
           }
         }
       } catch (e) {}
     }
+
+    // Automatically complete passkey authorization and enter console
+    await this.executePasskeyVerification();
   }
 
   async executePasskeyVerification() {
@@ -894,6 +950,10 @@ class ArgusAuth {
 
   showGatekeeper() {
     if (this.modal) {
+      this.modal.style.display = 'flex';
+      this.modal.style.visibility = 'visible';
+      this.modal.style.pointerEvents = 'auto';
+      this.modal.style.opacity = '1';
       this.modal.classList.add('active');
     }
     if (this.sessionPill) {
@@ -906,6 +966,10 @@ class ArgusAuth {
   hideGatekeeper() {
     if (this.modal) {
       this.modal.classList.remove('active');
+      this.modal.style.display = 'none';
+      this.modal.style.visibility = 'hidden';
+      this.modal.style.pointerEvents = 'none';
+      this.modal.style.opacity = '0';
     }
   }
 
@@ -918,6 +982,10 @@ class ArgusAuth {
 
   showLockOverlay() {
     if (!this.lockOverlay) return;
+    this.lockOverlay.style.display = 'flex';
+    this.lockOverlay.style.visibility = 'visible';
+    this.lockOverlay.style.pointerEvents = 'auto';
+    this.lockOverlay.style.opacity = '1';
     this.lockOverlay.classList.add('active');
     if (this.lockOperatorName && this.currentUser) {
       this.lockOperatorName.textContent = this.currentUser.displayName || this.currentUser.username;
@@ -930,6 +998,10 @@ class ArgusAuth {
   hideLockOverlay() {
     if (this.lockOverlay) {
       this.lockOverlay.classList.remove('active');
+      this.lockOverlay.style.display = 'none';
+      this.lockOverlay.style.visibility = 'hidden';
+      this.lockOverlay.style.pointerEvents = 'none';
+      this.lockOverlay.style.opacity = '0';
     }
     this.currentLockPinBuffer = '';
   }

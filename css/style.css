@@ -1625,18 +1625,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: rgba(4, 7, 14, 0.88);
   backdrop-filter: blur(36px);
   -webkit-backdrop-filter: blur(36px);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.35s ease;
 }
 
 .auth-modal-overlay.active {
-  opacity: 1;
-  visibility: visible;
+  display: flex !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 
 .auth-gatekeeper-card {
@@ -2017,18 +2020,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: rgba(3, 5, 11, 0.82);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s ease;
 }
 
 .locked-terminal-overlay.active {
-  opacity: 1;
-  visibility: visible;
+  display: flex !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 
 .locked-terminal-card {
