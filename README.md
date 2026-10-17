@@ -38,6 +38,40 @@ A surveillance system combining **Dark Glassmorphism UI**, a **Bento Grid** comm
    - Auto-captures timestamped snapshots with target bounding boxes whenever a human or motion spike is detected.
    - Interactive Lightbox modal to inspect and download high-resolution captured evidence.
 
+5. **Security Gatekeeper, Google OAuth & Two-Step Authentication (2FA)**:
+   - **Google 1-Click Login & Sign Up**: One-click authentication with Google Identity Services (`gsi/client`). Automatically provisions new Operator accounts or logs in returning operators instantly.
+   - **Unified Credentials Screen**: Operator ID/Username and Password combined into a single login prompt.
+   - **Two-Step Verification Gate**: When 2-step auth is enabled, operators are transferred to the secondary authentication options screen offering 3 verification methods:
+     1. **Passkey (Biometric / WebAuthn)**: Instant authorization via Touch ID, Face ID, Windows Hello, or device passkey.
+     2. **PIN from Email**: 6-digit one-time passcode dispatched to the operator's registered email (with real-time simulated testing preview).
+     3. **Security Key**: Hardware FIDO2 / USB security key or 4-digit Master Security Key PIN.
+   - **Lock Console (`Ctrl+L` / `Esc`)**: Instantly locks the surveillance terminal with a PIN overlay without interrupting active camera feeds or AI human detection.
+   - **MongoDB & Memory Persistence**: Session tokens, users, and 2FA challenges persist automatically in MongoDB with in-memory fallback for serverless deployments.
+
+### 🛡️ Operator Access Methods
+
+| Method | Type | Action / Details |
+| :--- | :--- | :--- |
+| **Google Sign-In / Sign-Up** | **1-Click OAuth** | Click **Continue with Google** / **Sign up with Google** |
+| **Credentials Login** | **Operator ID & Pass** | ID: `admin`, Password: `password123` |
+| **Quick Demo Access** | **1-Click Autofill** | Click **⚡ QUICK DEMO ACCESS** to autofill & submit |
+| **2-Step Auth (Passkey)** | **Biometrics** | Touch ID / Face ID / Windows Hello WebAuthn |
+| **2-Step Auth (Email PIN)** | **6-Digit OTP** | Enter 6-digit code or click Simulated Email Pill |
+| **2-Step Auth (Security Key)** | **Hardware/PIN** | Enter Master PIN: **`7777`** |
+| **Console Screen Lock** | **Fast Freeze** | Press **`Ctrl + L`** or click **🔒 Lock**; PIN **`7777`** to resume |
+
+---
+
+### ⚙️ Operator Settings & 2-Step Auth Setup
+- Access by clicking **`⚙️ Settings`** in the header session pill.
+- **Account Details**: View permanent Operator ID, Security Clearance, edit Callsign/Display Name, and configure registered Email.
+- **2-Step Auth Setup**:
+  - Master Toggle: Enable or disable 2-Step Authentication enforcement on login.
+  - **Passkey**: Test device biometric hardware readiness.
+  - **PIN from Email**: Verify registered email and test one-time PIN dispatch.
+  - **Security Key**: Configure custom 4-to-6 digit Master Security Key PIN (default: `7777`).
+- **Security Password**: Change security password with current password verification.
+
 ---
 
 ## 🚀 Quick Start

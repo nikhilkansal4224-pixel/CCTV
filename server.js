@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const { MongoClient } = require('mongodb');
+const { loginUser, verify2FA, resend2FACode, registerUser, authenticateWithGoogle, getUserProfile, updateUserProfile, changeUserPassword, verifySession, logoutSession, DEFAULT_ADMIN } = require('./api/_auth');
 
 let localtunnel = null;
 try {
@@ -193,6 +194,152 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  // API Auth: Login (ID & Password, triggers 2-Step verification if enabled)
+  if (pathname === '/api/auth/login' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await loginUser(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, ...result }));
+    } catch (err) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: 2-Step Authentication Verification (Passkey, Email PIN, Security Key)
+  if (pathname === '/api/auth/verify-2fa' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await verify2FA(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Resend 2-Step Email Verification PIN
+  if (pathname === '/api/auth/resend-code' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await resend2FACode(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Google Sign-In & Sign-Up
+  if (pathname === '/api/auth/google' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await authenticateWithGoogle(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Google OAuth Client ID
+  if (pathname === '/api/auth/google-client-id' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      clientId: process.env.GOOGLE_CLIENT_ID || '409626745185-pm588om09c00kgf5rcvha3voie7ap021.apps.googleusercontent.com'
+    }));
+    return;
+  }
+
+  // API Auth: Register new operator
+  if (pathname === '/api/auth/register' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await registerUser(data);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, ...result }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Session verification (Who am I?)
+  if (pathname === '/api/auth/me' && req.method === 'GET') {
+    const authHeader = req.headers['authorization'];
+    const user = await verifySession(authHeader);
+    if (!user) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ authenticated: false, error: 'Session expired or invalid.' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ authenticated: true, user }));
+    return;
+  }
+
+  // API Auth: Profile Details & 2-Step Auth Configuration (GET, PUT)
+  if (pathname === '/api/auth/profile') {
+    const authHeader = req.headers['authorization'];
+    if (req.method === 'GET') {
+      try {
+        const profile = await getUserProfile(authHeader);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, profile }));
+      } catch (err) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+      return;
+    }
+
+    if (req.method === 'PUT') {
+      try {
+        const data = await readJsonBody(req);
+        const updated = await updateUserProfile(authHeader, data);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, profile: updated }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+      return;
+    }
+  }
+
+  // API Auth: Change Password
+  if (pathname === '/api/auth/change-password' && req.method === 'POST') {
+    const authHeader = req.headers['authorization'];
+    try {
+      const data = await readJsonBody(req);
+      const result = await changeUserPassword(authHeader, data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Logout
+  if (pathname === '/api/auth/logout' && req.method === 'POST') {
+    const authHeader = req.headers['authorization'];
+    await logoutSession(authHeader);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, message: 'Logged out successfully.' }));
     return;
   }
 

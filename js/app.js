@@ -937,8 +937,21 @@ class ArgusHubApp {
     const btnClearEvents = document.getElementById('btnClearEvents');
     if (btnClearEvents) {
       btnClearEvents.addEventListener('click', async () => {
+        if (window.argusAuth && (!window.argusAuth.currentUser || window.argusAuth.isLocked)) {
+          if (window.argusAuth.isLocked) {
+            window.argusAuth.showLockOverlay();
+          } else {
+            window.argusAuth.showGatekeeper();
+          }
+          return;
+        }
+
         if (confirm('Clear all surveillance events from MongoDB?')) {
-          await fetch('/api/events', { method: 'DELETE' });
+          const headers = {};
+          if (window.argusAuth && window.argusAuth.token) {
+            headers['Authorization'] = `Bearer ${window.argusAuth.token}`;
+          }
+          await fetch('/api/events', { method: 'DELETE', headers });
           if (this.eventList) {
             this.eventList.innerHTML = `
               <div class="empty-log-placeholder" style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: 0.8rem; font-family: var(--font-hud);">
