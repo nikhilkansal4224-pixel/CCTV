@@ -38,6 +38,7 @@ class ArgusCameraNode {
   }
 
   async init() {
+    this.initViewfinderSize();
     this.bindEvents();
     this.requestWakeLock();
     this.monitorBattery();
@@ -50,6 +51,30 @@ class ArgusCameraNode {
       await this.startCamera();
       this.connectToHub();
     }
+  }
+
+  initViewfinderSize() {
+    this.viewfinderEl = document.getElementById('mobileViewfinder') || document.querySelector('.mobile-viewfinder');
+    const savedSize = localStorage.getItem('cctv_mobile_lens_size') || 'medium';
+    this.setFeedSize(savedSize);
+
+    document.querySelectorAll('[data-cam-size]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const size = btn.getAttribute('data-cam-size');
+        this.setFeedSize(size);
+      });
+    });
+  }
+
+  setFeedSize(size) {
+    if (!this.viewfinderEl) return;
+    this.viewfinderEl.classList.remove('size-compact', 'size-medium', 'size-large', 'size-full');
+    this.viewfinderEl.classList.add(`size-${size}`);
+    localStorage.setItem('cctv_mobile_lens_size', size);
+
+    document.querySelectorAll('[data-cam-size]').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-cam-size') === size);
+    });
   }
 
   showRoomDialog() {

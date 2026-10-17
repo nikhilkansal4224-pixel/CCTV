@@ -57,8 +57,17 @@
     </div>
   </div>
 
+  <!-- Viewfinder Sizing Selector (Compact, Normal, Large, Full) -->
+  <div class="mobile-size-toolbar" style="margin-top: 3.6rem; display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.35rem 0.6rem; background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(14px); border: 1px solid var(--border-glass); border-radius: var(--radius-pill); width: fit-content; margin-left: auto; margin-right: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+    <span style="font-size: 0.68rem; font-family: var(--font-hud); color: var(--text-muted); text-transform: uppercase; margin-right: 0.2rem; letter-spacing: 0.05em;">SIZE:</span>
+    <button class="chip-btn" data-cam-size="compact" title="Small Viewfinder (24vh)">S</button>
+    <button class="chip-btn active" data-cam-size="medium" title="Medium Ergonomic (36vh)">M</button>
+    <button class="chip-btn" data-cam-size="large" title="Large Viewfinder (50vh)">L</button>
+    <button class="chip-btn" data-cam-size="full" title="Maximum Screen Coverage">Max</button>
+  </div>
+
   <!-- Mobile Camera Viewfinder -->
-  <div class="mobile-viewfinder" style="margin-top: 3.5rem;">
+  <div class="mobile-viewfinder size-medium" id="mobileViewfinder" style="margin-top: 0.5rem;">
     <video id="mobilePreview" autoplay playsinline muted></video>
 
     <!-- Sci-Fi Corner Brackets -->

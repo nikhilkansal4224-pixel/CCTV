@@ -122,8 +122,28 @@
           </div>
         </div>
 
+        <!-- View Mode & Feed Sizing Toolbar -->
+        <div class="view-mode-toolbar">
+          <div class="view-mode-group">
+            <span style="font-size: 0.68rem; font-family: var(--font-hud); color: var(--text-muted); text-transform: uppercase; margin-right: 0.2rem; letter-spacing: 0.05em;">VIEW:</span>
+            <button class="chip-btn active" data-view-mode="focus" title="Single Focus Viewport with AI HUD">🎯 Single</button>
+            <button class="chip-btn" data-view-mode="gallery" title="Multi-Feed Matrix Grid">⊞ Gallery</button>
+            <button class="chip-btn" data-view-mode="split" title="Dual 2-Feed Split View">⧉ Split</button>
+            <button class="chip-btn" data-view-mode="quad" title="Quad 4-Camera Layout">🗖 Quad</button>
+          </div>
+
+          <div class="feed-size-group">
+            <span style="font-size: 0.68rem; font-family: var(--font-hud); color: var(--text-muted); text-transform: uppercase; margin-right: 0.2rem; letter-spacing: 0.05em;">SIZE:</span>
+            <button class="chip-btn" data-feed-size="compact" title="Small Viewport (260px)">S</button>
+            <button class="chip-btn active" data-feed-size="medium" title="Medium Viewport (420px)">M</button>
+            <button class="chip-btn" data-feed-size="large" title="Large Viewport (580px)">L</button>
+            <input type="range" id="feedHeightSlider" class="feed-height-slider" min="200" max="800" step="10" value="420" title="Fine-Tune Feed Height (200px - 800px)">
+            <span id="feedHeightValue" style="font-family: var(--font-hud); font-size: 0.72rem; color: var(--accent-cyan); min-width: 44px; text-align: right;">420px</span>
+          </div>
+        </div>
+
         <!-- Video Viewport & Sci-Fi HUD Canvas -->
-        <div class="viewport-container">
+        <div class="viewport-container" id="viewportSingle">
           <video id="primaryVideo" class="main-video-feed" autoplay playsinline muted></video>
           <canvas id="hudCanvas" class="hud-canvas"></canvas>
 
@@ -159,6 +179,9 @@
             <span class="banner-text">WARNING: HUMAN MOVEMENT DETECTED</span>
           </div>
         </div>
+
+        <!-- Multi-Camera Matrix Viewport (Gallery / Split / Quad) -->
+        <div class="gallery-matrix-container layout-grid-many" id="galleryMatrixContainer" style="display: none;"></div>
 
         <!-- Viewport Controls & Shader Presets Bar -->
         <div class="viewport-controls-bar">

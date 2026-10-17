@@ -59,6 +59,14 @@ class ArgusHubApp {
     this.snapModalTitle = document.getElementById('snapModalTitle');
     this.snapModalDownload = document.getElementById('snapModalDownload');
 
+    // View Modes & Dynamic Sizing Controls
+    this.viewMode = localStorage.getItem('argus_view_mode') || 'focus';
+    this.feedHeight = parseInt(localStorage.getItem('argus_feed_height') || '420', 10);
+    this.viewportSingle = document.getElementById('viewportSingle');
+    this.galleryMatrix = document.getElementById('galleryMatrixContainer');
+    this.feedHeightSlider = document.getElementById('feedHeightSlider');
+    this.feedHeightVal = document.getElementById('feedHeightValue');
+
     this.init();
   }
 
@@ -76,6 +84,10 @@ class ArgusHubApp {
     if (this.displayRoomPin) {
       this.displayRoomPin.textContent = this.roomId;
     }
+
+    // 0. Setup Viewport Sizing & View Mode Presets
+    this.applyFeedHeight(this.feedHeight);
+    this.setViewMode(this.viewMode);
 
     // 1. Fetch server's local network IP for mobile device reachability
     await this.detectNetworkIp();
@@ -314,6 +326,15 @@ class ArgusHubApp {
       }, 3000);
     }
 
+    // Flash detected tile in multi-camera gallery mode
+    if (this.galleryMatrix && event.type === 'HUMAN_DETECTED') {
+      const activeTile = this.galleryMatrix.querySelector(`.gallery-tile[data-cam-id="${this.activeCameraId}"]`);
+      if (activeTile) {
+        activeTile.classList.add('detected-human');
+        setTimeout(() => activeTile.classList.remove('detected-human'), 3500);
+      }
+    }
+
     // 2. Add to Surveillance Event Log UI
     this.addEventToLog(event, true);
 
@@ -403,6 +424,7 @@ class ArgusHubApp {
     this.cameras.set(id, { id, label, stream, videoEl: video, type });
 
     this.renderWallThumbnails();
+    this.renderGalleryMatrix();
 
     if (!this.activeCameraId || this.cameras.size === 1) {
       this.selectPrimaryCamera(id);
@@ -432,6 +454,7 @@ class ArgusHubApp {
     }
 
     this.renderWallThumbnails();
+    this.renderGalleryMatrix();
     this.updateCamCountBadge();
   }
 
@@ -449,6 +472,165 @@ class ArgusHubApp {
     }
 
     this.renderWallThumbnails();
+
+    if (this.galleryMatrix) {
+      this.galleryMatrix.querySelectorAll('.gallery-tile').forEach(t => {
+        t.classList.toggle('active-tile', t.getAttribute('data-cam-id') === id);
+      });
+    }
+  }
+
+  setViewMode(mode) {
+    this.viewMode = mode;
+    localStorage.setItem('argus_view_mode', mode);
+
+    // Update active button state
+    document.querySelectorAll('[data-view-mode]').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-view-mode') === mode);
+    });
+
+    if (mode === 'focus') {
+      if (this.viewportSingle) this.viewportSingle.style.display = 'flex';
+      if (this.galleryMatrix) this.galleryMatrix.style.display = 'none';
+    } else {
+      if (this.viewportSingle) this.viewportSingle.style.display = 'none';
+      if (this.galleryMatrix) {
+        this.galleryMatrix.style.display = 'grid';
+        this.galleryMatrix.classList.remove('layout-grid-many', 'layout-split', 'layout-quad');
+        if (mode === 'split') {
+          this.galleryMatrix.classList.add('layout-split');
+        } else if (mode === 'quad') {
+          this.galleryMatrix.classList.add('layout-quad');
+        } else {
+          this.galleryMatrix.classList.add('layout-grid-many');
+        }
+      }
+      this.renderGalleryMatrix();
+    }
+  }
+
+  applyFeedHeight(height) {
+    const clamped = Math.max(180, Math.min(900, height));
+    this.feedHeight = clamped;
+    localStorage.setItem('argus_feed_height', clamped);
+    document.documentElement.style.setProperty('--feed-viewport-height', `${clamped}px`);
+
+    if (this.feedHeightSlider) {
+      this.feedHeightSlider.value = clamped;
+    }
+    if (this.feedHeightVal) {
+      this.feedHeightVal.textContent = `${clamped}px`;
+    }
+
+    // Update active preset buttons (S, M, L)
+    document.querySelectorAll('[data-feed-size]').forEach(btn => {
+      const sizeType = btn.getAttribute('data-feed-size');
+      const isPreset = (sizeType === 'compact' && clamped <= 300) ||
+                       (sizeType === 'medium' && clamped > 300 && clamped <= 480) ||
+                       (sizeType === 'large' && clamped > 480);
+      btn.classList.toggle('active', isPreset);
+    });
+  }
+
+  renderGalleryMatrix() {
+    if (!this.galleryMatrix || this.viewMode === 'focus') return;
+    this.galleryMatrix.innerHTML = '';
+
+    if (this.cameras.size === 0) {
+      const emptyNotice = document.createElement('div');
+      emptyNotice.style.gridColumn = '1 / -1';
+      emptyNotice.style.display = 'flex';
+      emptyNotice.style.flexDirection = 'column';
+      emptyNotice.style.alignItems = 'center';
+      emptyNotice.style.justifyContent = 'center';
+      emptyNotice.style.height = '100%';
+      emptyNotice.style.minHeight = '200px';
+      emptyNotice.style.color = 'var(--text-muted)';
+      emptyNotice.style.gap = '0.6rem';
+      emptyNotice.innerHTML = `
+        <div style="font-size: 2.2rem; opacity: 0.6;">📹</div>
+        <div style="font-family: var(--font-hud); font-size: 0.85rem; letter-spacing: 0.05em; color: #fff;">NO CAMERA FEEDS CONNECTED</div>
+        <div style="font-size: 0.75rem; text-align: center; max-width: 340px; line-height: 1.4;">
+          Connect mobile camera via QR code, enable laptop camera, or add demo feed to view concurrent surveillance streams in this multi-lens matrix.
+        </div>
+      `;
+      this.galleryMatrix.appendChild(emptyNotice);
+      return;
+    }
+
+    this.cameras.forEach((cam, id) => {
+      const tile = document.createElement('div');
+      tile.className = `gallery-tile ${id === this.activeCameraId ? 'active-tile' : ''}`;
+      tile.setAttribute('data-cam-id', id);
+
+      const vid = document.createElement('video');
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.muted = true;
+      vid.srcObject = cam.stream;
+      vid.play().catch(e => console.log('Gallery tile play error:', e));
+
+      const overlay = document.createElement('div');
+      overlay.className = 'gallery-tile-overlay';
+      overlay.innerHTML = `
+        <div class="gallery-tile-top">
+          <span class="gallery-tile-title">${cam.label}</span>
+          <div class="status-pill" style="padding: 0.2rem 0.5rem; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);">
+            <span class="status-dot active" style="width: 5px; height: 5px;"></span>
+            <span style="font-size: 0.65rem; color: #fff;">LIVE</span>
+          </div>
+        </div>
+        <div class="gallery-tile-actions">
+          <button class="glass-btn glass-btn-primary btn-focus-tile" style="padding: 0.3rem 0.65rem; font-size: 0.72rem;" title="Focus this camera feed">
+            🎯 Focus
+          </button>
+          <button class="glass-btn btn-snap-tile" style="padding: 0.3rem 0.65rem; font-size: 0.72rem;" title="Capture snapshot from this lens">
+            📸 Snap
+          </button>
+          <button class="glass-btn glass-btn-danger btn-remove-tile" style="padding: 0.3rem 0.55rem; font-size: 0.72rem;" title="Disconnect Feed">
+            ✕
+          </button>
+        </div>
+      `;
+
+      // Event listeners for tile controls
+      overlay.querySelector('.btn-focus-tile').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.selectPrimaryCamera(id);
+        this.setViewMode('focus');
+      });
+
+      overlay.querySelector('.btn-snap-tile').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.detector) {
+          const snap = this.detector.captureSnapshot(vid, null);
+          if (snap) {
+            this.handleDetectionEvent({
+              type: 'MANUAL_SNAPSHOT',
+              camLabel: cam.label,
+              confidence: 100,
+              motionIntensity: 0,
+              timestamp: new Date().toLocaleTimeString(),
+              snapshot: snap
+            });
+          }
+        }
+      });
+
+      overlay.querySelector('.btn-remove-tile').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.removeCameraFeed(id);
+      });
+
+      tile.appendChild(vid);
+      tile.appendChild(overlay);
+
+      tile.addEventListener('click', () => {
+        this.selectPrimaryCamera(id);
+      });
+
+      this.galleryMatrix.appendChild(tile);
+    });
   }
 
   renderWallThumbnails() {
@@ -798,6 +980,34 @@ class ArgusHubApp {
       });
     }
 
+    // View Mode Switcher (Single Focus, Gallery, Split, Quad)
+    const viewModeBtns = document.querySelectorAll('[data-view-mode]');
+    viewModeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.getAttribute('data-view-mode');
+        this.setViewMode(mode);
+      });
+    });
+
+    // Feed Size Presets (S, M, L)
+    const feedSizeBtns = document.querySelectorAll('[data-feed-size]');
+    feedSizeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const preset = btn.getAttribute('data-feed-size');
+        if (preset === 'compact') this.applyFeedHeight(260);
+        else if (preset === 'medium') this.applyFeedHeight(420);
+        else if (preset === 'large') this.applyFeedHeight(580);
+      });
+    });
+
+    // Custom Feed Height Slider
+    if (this.feedHeightSlider) {
+      this.feedHeightSlider.addEventListener('input', (e) => {
+        const h = parseInt(e.target.value, 10);
+        this.applyFeedHeight(h);
+      });
+    }
+
     const viewportContainer = document.querySelector('.viewport-container');
     const filterChips = document.querySelectorAll('.chip-btn[data-filter]');
     filterChips.forEach(chip => {
@@ -816,10 +1026,13 @@ class ArgusHubApp {
     });
 
     const btnFullscreen = document.getElementById('btnFullscreen');
-    if (btnFullscreen && viewportContainer) {
+    if (btnFullscreen) {
       btnFullscreen.addEventListener('click', () => {
+        const target = (this.viewMode === 'focus' ? this.viewportSingle : this.galleryMatrix) || viewportContainer;
         if (!document.fullscreenElement) {
-          viewportContainer.requestFullscreen().catch(err => console.warn(err));
+          if (target && target.requestFullscreen) {
+            target.requestFullscreen().catch(err => console.warn(err));
+          }
         } else {
           document.exitFullscreen();
         }
