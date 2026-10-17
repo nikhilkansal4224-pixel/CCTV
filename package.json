@@ -6,11 +6,12 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm start",
+    "deploy:vercel": "cd frontend && vercel --prod",
     "test": "node test_suite.js",
     "db:init": "node scripts/init-db.js",
-    "db:recreate": "node scripts/init-db.js --reset",
-    "deploy": "vercel --prod",
-    "deploy:preview": "vercel"
+    "db:recreate": "node scripts/init-db.js --reset"
   },
   "keywords": [
     "cctv",
