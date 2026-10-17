@@ -4,6 +4,14 @@
   "framework": null,
   "routes": [
     {
+      "src": "/api/auth/(.*)",
+      "dest": "/api/auth.js?action=$1"
+    },
+    {
+      "src": "/api/auth",
+      "dest": "/api/auth.js"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/$1"
     },
