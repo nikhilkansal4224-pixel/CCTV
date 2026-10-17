@@ -1,8 +1,10 @@
-# 👁️ ARGUS // Surreal Multi-Camera CCTV & Neural Human Detection Matrix
+# 👁️ ARGUS // Surreal Multi-Camera CCTV & Neural Detection Matrix
 
-A surveillance system combining **Dark Glassmorphism UI**, a **Bento Grid** command matrix, and a living **Surrealist Cosmic Background** with real-time **AI Human and Motion Detection** powered by WebRTC P2P and TensorFlow.js.
+This repository is split into two independent deployments:
+- **[`backend/`](./backend)**: Node.js API server & MongoDB connection, configured for hosting on **[Render](https://render.com)**.
+- **[`frontend/`](./frontend)**: Glassmorphic surveillance dashboard, mobile camera node & AI detection interface, configured for hosting on **[Vercel](https://vercel.com)**.
 
-![Surreal CCTV Background](assets/images/surreal_bg.jpg)
+![Surreal CCTV Background](frontend/assets/images/surreal_bg.jpg)
 
 ---
 

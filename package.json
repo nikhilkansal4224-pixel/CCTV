@@ -4,14 +4,14 @@
   "description": "Multi-Camera Surrealist CCTV with WebRTC QR-Pairing and AI Human Detection",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "cd backend && npm start",
+    "dev": "cd backend && npm start",
     "start:backend": "cd backend && npm start",
     "start:frontend": "cd frontend && npm start",
-    "deploy:vercel": "cd frontend && vercel --prod",
-    "test": "node test_suite.js",
-    "db:init": "node scripts/init-db.js",
-    "db:recreate": "node scripts/init-db.js --reset"
+    "deploy:vercel": "cd frontend && npm run deploy",
+    "test": "cd backend && npm test",
+    "db:init": "cd backend && npm run db:init",
+    "db:recreate": "cd backend && npm run db:recreate"
   },
   "keywords": [
     "cctv",

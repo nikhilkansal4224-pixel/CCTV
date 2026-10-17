@@ -9,7 +9,7 @@
 
   // Configured default Render API URL (can be customized once deployed to Render)
   // Example: 'https://argus-cctv-api.onrender.com'
-  const DEFAULT_RENDER_API = '';
+  const DEFAULT_RENDER_API = 'https://cctv-i02z.onrender.com/';
 
   // Check URL query param override: e.g. ?api=https://my-render-app.onrender.com
   function getQueryApiOverride() {
@@ -22,7 +22,7 @@
           return val;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
     return null;
   }
 
@@ -42,7 +42,7 @@
       if (stored && stored.trim()) {
         return stored.trim().replace(/\/+$/, '');
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 4. Default Render deployment constant (if defined)
     if (DEFAULT_RENDER_API && DEFAULT_RENDER_API.trim()) {
@@ -63,7 +63,7 @@
         localStorage.setItem('argus_api_base', clean);
         window.ARGUS_API_BASE = clean;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function apiUrl(path) {
