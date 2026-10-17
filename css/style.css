@@ -10,7 +10,7 @@
   --bg-surface-glass: rgba(255, 255, 255, 0.09);
   --bg-surface-glass-hover: rgba(255, 255, 255, 0.16);
   --bg-surface-elevated: rgba(255, 255, 255, 0.13);
-  
+
   --border-glass: rgba(255, 255, 255, 0.22);
   --border-glass-bright: rgba(255, 255, 255, 0.5);
   --border-neon-cyan: rgba(0, 240, 255, 0.65);
@@ -40,7 +40,7 @@
   --radius-md: 14px;
   --radius-lg: 22px;
   --radius-xl: 30px;
-  
+
   --shadow-glass: 0 20px 50px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-glass), inset 0 1px 0 rgba(255, 255, 255, 0.35);
   --shadow-glass-hover: 0 25px 60px -8px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border-glass-bright), inset 0 1px 0 rgba(255, 255, 255, 0.55);
   --shadow-neon-cyan: 0 0 25px var(--accent-cyan-glow);
@@ -51,13 +51,16 @@
 }
 
 /* Base Reset & Box Sizing */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   min-height: 100vh;
   background-color: var(--bg-primary);
@@ -120,8 +123,15 @@ html, body {
 }
 
 @keyframes cosmicPulse {
-  0% { opacity: 0.35; transform: scale(0.98); }
-  100% { opacity: 0.85; transform: scale(1.03); }
+  0% {
+    opacity: 0.35;
+    transform: scale(0.98);
+  }
+
+  100% {
+    opacity: 0.85;
+    transform: scale(1.03);
+  }
 }
 
 /* Main App Shell */
@@ -184,8 +194,17 @@ html, body {
 }
 
 @keyframes eyeBlink {
-  0%, 94%, 98%, 100% { transform: scaleY(1); }
-  96% { transform: scaleY(0.1); }
+
+  0%,
+  94%,
+  98%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  96% {
+    transform: scaleY(0.1);
+  }
 }
 
 .brand-title {
@@ -260,15 +279,37 @@ html, body {
 }
 
 @keyframes pulseBeacon {
-  0% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.3); opacity: 1; }
-  100% { transform: scale(1); opacity: 0.8; }
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
 }
 
 @keyframes pulseRapid {
-  0% { transform: scale(0.9); opacity: 0.6; }
-  50% { transform: scale(1.4); opacity: 1; }
-  100% { transform: scale(0.9); opacity: 0.6; }
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
 }
 
 /* Header Action Buttons */
@@ -448,7 +489,8 @@ html, body {
   flex-wrap: wrap;
 }
 
-.view-mode-group, .feed-size-group {
+.view-mode-group,
+.feed-size-group {
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -494,15 +536,18 @@ html, body {
 .gallery-matrix-container.layout-grid-1 {
   grid-template-columns: 1fr;
 }
+
 .gallery-matrix-container.layout-grid-2,
 .gallery-matrix-container.layout-split {
   grid-template-columns: 1fr 1fr;
 }
+
 .gallery-matrix-container.layout-grid-4,
 .gallery-matrix-container.layout-quad {
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
 }
+
 .gallery-matrix-container.layout-grid-many {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
@@ -538,8 +583,13 @@ html, body {
 }
 
 @keyframes pulseTileAlarm {
-  0% { border-color: rgba(255, 42, 95, 0.6); }
-  100% { border-color: rgba(255, 42, 95, 1); }
+  0% {
+    border-color: rgba(255, 42, 95, 0.6);
+  }
+
+  100% {
+    border-color: rgba(255, 42, 95, 1);
+  }
 }
 
 .gallery-tile video {
@@ -603,9 +653,11 @@ html, body {
 .viewport-container.filter-night-vision {
   filter: contrast(1.4) brightness(1.2) hue-rotate(90deg) saturate(1.8);
 }
+
 .viewport-container.filter-thermal {
   filter: contrast(2) saturate(2.5) invert(1) hue-rotate(180deg);
 }
+
 .viewport-container.filter-cyberpunk {
   filter: contrast(1.3) saturate(1.7) hue-rotate(290deg);
 }
@@ -621,10 +673,30 @@ html, body {
   z-index: 6;
   opacity: 0.8;
 }
-.hud-corner.tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
-.hud-corner.tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
-.hud-corner.bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
-.hud-corner.br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+
+.hud-corner.tl {
+  top: 12px;
+  left: 12px;
+  border-width: 2px 0 0 2px;
+}
+
+.hud-corner.tr {
+  top: 12px;
+  right: 12px;
+  border-width: 2px 2px 0 0;
+}
+
+.hud-corner.bl {
+  bottom: 12px;
+  left: 12px;
+  border-width: 0 0 2px 2px;
+}
+
+.hud-corner.br {
+  bottom: 12px;
+  right: 12px;
+  border-width: 0 2px 2px 0;
+}
 
 .viewport-overlay-top {
   position: absolute;
@@ -800,9 +872,19 @@ html, body {
 }
 
 @keyframes scanLaser {
-  0% { top: 8px; opacity: 0.3; }
-  50% { opacity: 1; }
-  100% { top: 124px; opacity: 0.3; }
+  0% {
+    top: 8px;
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    top: 124px;
+    opacity: 0.3;
+  }
 }
 
 .qr-instructions {
@@ -1207,14 +1289,17 @@ input[type="range"]::-webkit-slider-thumb:hover {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.2);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-cyan);
 }
@@ -1397,15 +1482,19 @@ input[type="range"]::-webkit-slider-thumb:hover {
     grid-column: span 12;
     grid-row: span auto;
   }
+
   .bento-cam-wall {
     grid-column: span 12;
   }
+
   .bento-qr-pair {
     grid-column: span 6;
   }
+
   .bento-radar {
     grid-column: span 6;
   }
+
   .bento-event-log {
     grid-column: span 12;
   }
@@ -1415,37 +1504,48 @@ input[type="range"]::-webkit-slider-thumb:hover {
   :root {
     --feed-viewport-height: 250px;
   }
+
   .app-container {
     padding: 0.75rem;
   }
+
   .main-header {
     flex-direction: column;
     align-items: flex-start;
     padding: 1rem;
     gap: 1rem;
   }
+
   .header-actions {
     width: 100%;
     justify-content: space-between;
   }
+
   .bento-grid {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-  .bento-qr-pair, .bento-radar {
+
+  .bento-qr-pair,
+  .bento-radar {
     grid-column: span 12;
   }
-  .viewport-container, .gallery-matrix-container {
+
+  .viewport-container,
+  .gallery-matrix-container {
     height: var(--feed-viewport-height);
     min-height: 190px;
   }
+
   .view-mode-toolbar {
     flex-direction: column;
     align-items: stretch;
     gap: 0.5rem;
   }
-  .view-mode-group, .feed-size-group {
+
+  .view-mode-group,
+  .feed-size-group {
     justify-content: space-between;
   }
 }
