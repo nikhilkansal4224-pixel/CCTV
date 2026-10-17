@@ -134,6 +134,8 @@ class ArgusAuth {
     this.googleFallbackModal = document.getElementById('googleFallbackModal');
     this.btnCloseGoogleFallback = document.getElementById('btnCloseGoogleFallback');
     this.btnLaunchGooglePageDirect = document.getElementById('btnLaunchGooglePageDirect');
+    this.btnBackFromGoogleAuth = document.getElementById('btnBackFromGoogleAuth');
+    this.googleAuthError = document.getElementById('googleAuthErrorBanner');
     this.formCustomGoogle = document.getElementById('formCustomGoogleLogin');
     this.customGoogleEmail = document.getElementById('customGoogleEmail');
     this.customGoogleName = document.getElementById('customGoogleName');
@@ -235,6 +237,70 @@ class ArgusAuth {
         if (e) e.preventDefault();
         this.playKeyClick();
         this.executePasskeyVerification();
+      });
+    }
+
+    // Google Sign-In & 1-Click Verified Operator Handlers
+    if (this.btnGoogleLogin) {
+      this.btnGoogleLogin.addEventListener('click', (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
+        this.triggerGoogleFlow();
+      });
+    }
+
+    if (this.btnGoogleRegister) {
+      this.btnGoogleRegister.addEventListener('click', (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
+        this.triggerGoogleFlow();
+      });
+    }
+
+    if (this.btnLaunchGooglePageDirect) {
+      this.btnLaunchGooglePageDirect.addEventListener('click', (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
+        if (this.googleTokenClient) {
+          try {
+            this.googleTokenClient.requestAccessToken({ prompt: 'select_account' });
+            return;
+          } catch (err) {}
+        }
+        this.openGoogleAuthPopup(true);
+      });
+    }
+
+    if (this.btnBackFromGoogleAuth) {
+      this.btnBackFromGoogleAuth.addEventListener('click', (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
+        this.showView('credentials');
+      });
+    }
+
+    // 1-Click verified Google operator profiles (Nikhil Kansal, Dr. Vance)
+    document.querySelectorAll('.btn-choose-google').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
+        const email = btn.getAttribute('data-email') || btn.dataset.email;
+        const name = btn.getAttribute('data-name') || btn.dataset.name;
+        if (email) {
+          this.submitGoogleAuth({ email, name }, btn);
+        }
+      });
+    });
+
+    if (this.formCustomGoogle) {
+      this.formCustomGoogle.addEventListener('submit', (e) => {
+        if (e) e.preventDefault();
+        const email = this.customGoogleEmail?.value?.trim();
+        const name = this.customGoogleName?.value?.trim();
+        const submitBtn = this.formCustomGoogle.querySelector('button[type="submit"]');
+        if (email) {
+          this.submitGoogleAuth({ email, name }, submitBtn);
+        }
       });
     }
 
@@ -535,7 +601,8 @@ class ArgusAuth {
       this.emailError,
       this.securityKeyError,
       this.regError,
-      this.lockPinError
+      this.lockPinError,
+      this.googleAuthError
     ].forEach(el => {
       if (el) {
         el.textContent = '';
@@ -603,6 +670,12 @@ class ArgusAuth {
     this.clearErrors();
     this.setBtnLoading(this.btnSubmitLogin, true);
 
+    const demoBanners = document.querySelectorAll('.btn-demo-quick-login');
+    demoBanners.forEach(b => {
+      b.style.opacity = '0.6';
+      b.style.pointerEvents = 'none';
+    });
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -638,6 +711,10 @@ class ArgusAuth {
       this.showError(this.loginError, err.message);
     } finally {
       this.setBtnLoading(this.btnSubmitLogin, false);
+      demoBanners.forEach(b => {
+        b.style.opacity = '1';
+        b.style.pointerEvents = 'auto';
+      });
     }
   }
 
@@ -1488,69 +1565,18 @@ class ArgusAuth {
 
     if (window.google?.accounts?.id || window.google?.accounts?.oauth2) {
       setupGoogleClients();
+    } else if (document.readyState === 'complete') {
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (window.google?.accounts?.id || window.google?.accounts?.oauth2 || attempts > 20) {
+          clearInterval(interval);
+          setupGoogleClients();
+        }
+      }, 200);
     } else {
       window.addEventListener('load', () => {
         setTimeout(setupGoogleClients, 120);
-      });
-    }
-
-    // 4. Bind Button Listeners
-    if (this.btnGoogleLogin) {
-      this.btnGoogleLogin.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.playKeyClick();
-        this.triggerGoogleFlow();
-      });
-    }
-
-    if (this.btnGoogleRegister) {
-      this.btnGoogleRegister.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.playKeyClick();
-        this.triggerGoogleFlow();
-      });
-    }
-
-    if (this.btnLaunchGooglePageDirect) {
-      this.btnLaunchGooglePageDirect.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.playKeyClick();
-        if (this.googleTokenClient) {
-          try {
-            this.googleTokenClient.requestAccessToken({ prompt: 'select_account' });
-            return;
-          } catch (err) {}
-        }
-        this.openGoogleAuthPopup(true);
-      });
-    }
-
-    if (this.btnBackFromGoogleAuth) {
-      this.btnBackFromGoogleAuth.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.playKeyClick();
-        this.showView('credentials');
-      });
-    }
-
-    // 1-Click verified Google operator profiles
-    document.querySelectorAll('.btn-choose-google').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.playKeyClick();
-        const email = btn.dataset.email;
-        const name = btn.dataset.name;
-        this.submitGoogleAuth({ email, name });
-      });
-    });
-
-    if (this.formCustomGoogle) {
-      this.formCustomGoogle.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const email = this.customGoogleEmail?.value?.trim();
-        const name = this.customGoogleName?.value?.trim();
-        if (email) {
-          this.submitGoogleAuth({ email, name });
-        }
       });
     }
   }
@@ -1655,8 +1681,22 @@ class ArgusAuth {
     }
   }
 
-  async submitGoogleAuth({ credential, email, name, picture }) {
+  async submitGoogleAuth({ credential, email, name, picture }, triggeringBtn = null) {
     this.playRadarScan();
+    this.clearErrors();
+    let originalArrow = null;
+    let arrowEl = null;
+
+    if (triggeringBtn) {
+      triggeringBtn.style.opacity = '0.6';
+      triggeringBtn.style.pointerEvents = 'none';
+      arrowEl = triggeringBtn.querySelector('.auth-2fa-method-arrow');
+      if (arrowEl) {
+        originalArrow = arrowEl.textContent;
+        arrowEl.textContent = '⏳';
+      }
+    }
+
     try {
       const res = await fetch('/api/auth/google', {
         method: 'POST',
@@ -1665,7 +1705,7 @@ class ArgusAuth {
       });
 
       const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok || !data.success) {
         throw new Error(data.error || 'Google authentication failed.');
       }
 
@@ -1673,11 +1713,19 @@ class ArgusAuth {
       this.onAuthSuccess(data);
     } catch (err) {
       this.playErrorBuzzer();
+      if (this.googleAuthError) {
+        this.showError(this.googleAuthError, err.message);
+      }
       if (this.loginError) {
-        this.loginError.textContent = err.message;
-        this.loginError.classList.add('visible');
-      } else {
-        alert(err.message);
+        this.showError(this.loginError, err.message);
+      }
+    } finally {
+      if (triggeringBtn) {
+        triggeringBtn.style.opacity = '1';
+        triggeringBtn.style.pointerEvents = 'auto';
+        if (arrowEl && originalArrow !== null) {
+          arrowEl.textContent = originalArrow;
+        }
       }
     }
   }
