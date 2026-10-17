@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARGUS // Surreal Multi-Camera CCTV & Neural Human Detection System</title>
+  <meta name="description" content="Next-generation multi-camera surveillance hub. Connect mobile phones and laptops via QR code with real-time AI human and motion detection, wrapped in dark glassmorphism and surrealist aesthetics.">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300f0ff'><circle cx='12' cy='12' r='4'/><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/></svg>">
+
+  <!-- Core Libraries: TensorFlow.js, COCO-SSD, PeerJS, QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- Surrealist Living Background Engine -->
+  <div class="surreal-canvas-wrapper">
+    <img src="assets/images/surreal_bg.jpg" alt="Surreal Void Art" class="surreal-bg-image">
+    <canvas id="surrealCanvas" class="surreal-canvas"></canvas>
+    <div class="surreal-vignette"></div>
+    <div class="surreal-pulse-overlay"></div>
+  </div>
+
+  <!-- Main Application Shell -->
+  <div class="app-container">
+
+    <!-- ====================================================================
+         TOP HEADER BAR (Glassmorphism Pill)
+         ==================================================================== -->
+    <header class="main-header">
+      <div class="brand-section">
+        <div class="brand-logo-eye">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3" fill="#00f0ff"></circle>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">ARGUS <span class="brand-tag">v3.0 NEURAL EYE</span></h1>
+          <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-hud);">
+            SURREAL MULTI-CAMERA SURVEILLANCE & HUMAN DETECTION MATRIX
+          </div>
+        </div>
+      </div>
+
+      <!-- Telemetry Status Badges -->
+      <div class="telemetry-bar">
+        <div class="status-pill" id="statusHubPill">
+          <span class="status-dot"></span>
+          <span class="pill-text">CONNECTING HUB...</span>
+        </div>
+
+        <div class="status-pill" id="statusMongoPill" title="Local MongoDB Database Engine">
+          <span class="status-dot"></span>
+          <span class="pill-text">MONGODB: CONNECTING...</span>
+        </div>
+
+        <div class="status-pill" id="statusAiPill">
+          <span class="status-dot"></span>
+          <span class="pill-text">INITIALIZING AI SENTINEL...</span>
+        </div>
+
+        <div class="status-pill">
+          <span class="status-dot active"></span>
+          <span id="activeCamCountBadge">0 CAMERAS</span>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons & Operator Session -->
+      <div class="header-actions">
+        <!-- Operator Identity & Lock Console Pill -->
+        <div class="user-session-pill" id="userSessionPill" style="display: none;">
+          <div class="user-avatar-dot"></div>
+          <div class="user-info-text">
+            <span class="user-name" id="sessionUserName">Admin</span>
+            <span class="user-clearance" id="sessionUserClearance">Level 4 Clearance</span>
+          </div>
+          <button class="glass-btn glass-btn-sm" id="btnOpenSettings" title="Operator Account & Security Settings">
+            ⚙️ Settings
+          </button>
+          <button class="glass-btn glass-btn-sm" id="btnLockConsole" title="Lock Console (Ctrl+L / Esc)">
+            🔒 Lock
+          </button>
+          <button class="glass-btn glass-btn-danger glass-btn-sm" id="btnLogoutSession" title="Logout Operator">
+            ⏻
+          </button>
+        </div>
+
+        <button class="glass-btn glass-btn-primary" id="btnAddLaptop">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          + Add Laptop Cam
+        </button>
+
+        <button class="glass-btn" id="btnAddSim" title="Add virtual test camera with walking human simulation">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          Simulate Demo Feed
+        </button>
+      </div>
+    </header>
+
+    <!-- ====================================================================
+         BENTO GRID MATRIX
+         ==================================================================== -->
+    <main class="bento-grid">
+
+      <!-- BENTO CARD 1: HERO PRIMARY SUPER-FEED (8 cols x 4 rows) -->
+      <section class="bento-card bento-hero-feed" aria-label="Primary Camera Viewport">
+        <div class="card-header" style="margin-bottom: 0.6rem;">
+          <div class="card-title-group">
+            <div class="card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 7l-7 5 7 5V7z"></path>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Primary Surveillance Viewport</div>
+              <div class="card-subtitle">REAL-TIME TENSORFLOW AI ANALYSIS & HUD TARGET LOCK</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="glass-btn" id="btnManualSnap" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" title="Capture Snapshot Now">
+              📸 Snapshot
+            </button>
+            <button class="glass-btn" id="btnFullscreen" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" title="Expand Fullscreen">
+              ⛶ Fullscreen
+            </button>
+          </div>
+        </div>
+
+        <!-- View Mode & Feed Sizing Toolbar -->
+        <div class="view-mode-toolbar">
+          <div class="view-mode-group">
+            <span style="font-size: 0.68rem; font-family: var(--font-hud); color: var(--text-muted); text-transform: uppercase; margin-right: 0.2rem; letter-spacing: 0.05em;">VIEW:</span>
+            <button class="chip-btn active" data-view-mode="focus" title="Single Focus Viewport with AI HUD">🎯 Single</button>
+            <button class="chip-btn" data-view-mode="gallery" title="Multi-Feed Matrix Grid">⊞ Gallery</button>
+            <button class="chip-btn" data-view-mode="split" title="Dual 2-Feed Split View">⧉ Split</button>
+            <button class="chip-btn" data-view-mode="quad" title="Quad 4-Camera Layout">🗖 Quad</button>
+          </div>
+
+          <div class="feed-size-group">
+            <span style="font-size: 0.68rem; font-family: var(--font-hud); color: var(--text-muted); text-transform: uppercase; margin-right: 0.2rem; letter-spacing: 0.05em;">SIZE:</span>
+            <button class="chip-btn" data-feed-size="compact" title="Small Viewport (260px)">S</button>
+            <button class="chip-btn active" data-feed-size="medium" title="Medium Viewport (420px)">M</button>
+            <button class="chip-btn" data-feed-size="large" title="Large Viewport (580px)">L</button>
+            <input type="range" id="feedHeightSlider" class="feed-height-slider" min="200" max="800" step="10" value="420" title="Fine-Tune Feed Height (200px - 800px)">
+            <span id="feedHeightValue" style="font-family: var(--font-hud); font-size: 0.72rem; color: var(--accent-cyan); min-width: 44px; text-align: right;">420px</span>
+          </div>
+        </div>
+
+        <!-- Video Viewport & Sci-Fi HUD Canvas -->
+        <div class="viewport-container" id="viewportSingle">
+          <video id="primaryVideo" class="main-video-feed" autoplay playsinline muted></video>
+          <canvas id="hudCanvas" class="hud-canvas"></canvas>
+
+          <!-- Sci-Fi Corner Accents -->
+          <div class="hud-corner tl"></div>
+          <div class="hud-corner tr"></div>
+          <div class="hud-corner bl"></div>
+          <div class="hud-corner br"></div>
+
+          <!-- Top HUD Badges -->
+          <div class="viewport-overlay-top">
+            <div class="cam-badge-group">
+              <span class="cam-live-indicator">
+                <span class="status-dot alert" style="width: 6px; height: 6px;"></span>
+                REC LIVE
+              </span>
+              <span class="cam-meta-badge" id="primaryCamBadge">STANDBY // NO CAM SELECTED</span>
+            </div>
+
+            <div class="cam-badge-group">
+              <span class="cam-meta-badge" id="primaryFpsBadge">-- FPS</span>
+              <span class="cam-meta-badge" id="primaryResBadge">-- x --</span>
+            </div>
+          </div>
+
+          <!-- Threat Alert Popup Banner -->
+          <div class="threat-alert-banner" id="threatAlertBanner">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span class="banner-text">WARNING: HUMAN MOVEMENT DETECTED</span>
+          </div>
+        </div>
+
+        <!-- Multi-Camera Matrix Viewport (Gallery / Split / Quad) -->
+        <div class="gallery-matrix-container layout-grid-many" id="galleryMatrixContainer" style="display: none;"></div>
+
+        <!-- Viewport Controls & Shader Presets Bar -->
+        <div class="viewport-controls-bar">
+          <div class="vision-filter-chips">
+            <span style="font-size: 0.72rem; font-family: var(--font-hud); color: var(--text-muted); margin-right: 0.25rem;">VISION:</span>
+            <button class="chip-btn active" data-filter="normal">Normal RGB</button>
+            <button class="chip-btn" data-filter="night-vision">Night Vision (IR)</button>
+            <button class="chip-btn" data-filter="thermal">Thermal FLIR</button>
+            <button class="chip-btn" data-filter="cyberpunk">Cyber HUD</button>
+          </div>
+
+          <div class="viewport-actions">
+            <button class="glass-btn glass-btn-primary" id="btnToggleAudio" style="font-size: 0.75rem; padding: 0.35rem 0.85rem;">
+              🔊 AUDIO ALARM ON
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 2: QR CODE & MOBILE PAIRING (4 cols x 2 rows) -->
+      <section class="bento-card bento-qr-pair">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Connect Mobile Camera</div>
+              <div class="card-subtitle">INSTANT QR P2P WEBRTC PAIRING</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Network Connection Mode Switcher (Global HTTPS vs Local Wi-Fi) -->
+        <div style="display: flex; gap: 0.4rem; margin-bottom: 0.6rem;">
+          <button class="chip-btn active" id="btnModeGlobal" style="flex: 1; text-align: center; font-size: 0.7rem; padding: 0.35rem;">
+            🌐 Any Wi-Fi / 4G / 5G (Global)
+          </button>
+          <button class="chip-btn" id="btnModeLocal" style="flex: 1; text-align: center; font-size: 0.7rem; padding: 0.35rem;">
+            🏠 Same Wi-Fi (Local LAN)
+          </button>
+        </div>
+
+        <div class="qr-deck-content">
+          <div class="qr-code-frame">
+            <div id="qrCodeContainer"></div>
+            <div class="qr-scanner-laser"></div>
+          </div>
+
+          <div class="qr-instructions">
+            <div class="qr-step">
+              <div class="step-num">1</div>
+              <div>Scan QR with phone on <b>ANY Wi-Fi, 4G, or 5G</b> worldwide.</div>
+            </div>
+            <div class="qr-step">
+              <div class="step-num">2</div>
+              <div>HTTPS encrypted tunnel enables camera permissions anywhere.</div>
+            </div>
+            <div class="qr-step">
+              <div class="step-num">3</div>
+              <div>Streams encrypted 1080p video directly to this CCTV Hub!</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fast Mobile 4-Digit PIN Code -->
+        <div class="mobile-pin-row">
+          <div class="pin-label-group">
+            <span class="pin-label-text">Fast Mobile Room PIN:</span>
+            <span class="pin-code-display" id="displayRoomPin">----</span>
+          </div>
+          <button class="glass-btn" id="btnCopyPin" style="padding: 0.35rem 0.65rem; font-size: 0.72rem;">
+            Copy PIN
+          </button>
+        </div>
+
+        <div class="link-input-pill">
+          <span style="font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-hud);">LINK:</span>
+          <input type="text" id="mobileLinkInput" class="link-input-text" readonly value="Generating...">
+          <button class="glass-btn" id="btnCopyLink" style="padding: 0.3rem 0.75rem; font-size: 0.72rem;">
+            Copy
+          </button>
+        </div>
+
+        <!-- Tunnel Password Banner if using loca.lt -->
+        <div class="tunnel-pass-box" id="tunnelPassBox" style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; background: rgba(0, 240, 255, 0.08); border: 1px dashed rgba(0, 240, 255, 0.4); border-radius: 8px; padding: 0.35rem 0.65rem; margin-top: 0.45rem;">
+          <div style="font-size: 0.68rem; color: var(--text-secondary); font-family: var(--font-hud);">
+            Tunnel Password (if asked): <span id="tunnelPassCode" style="color: var(--accent-cyan); font-weight: 700;">--</span>
+          </div>
+          <button class="glass-btn" id="btnCopyTunnelPass" style="padding: 0.2rem 0.5rem; font-size: 0.65rem;">
+            Copy
+          </button>
+        </div>
+
+        <!-- Quick 1-Click Launch Mobile Lens in Tab -->
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.65rem;">
+          <button class="glass-btn glass-btn-primary" id="btnOpenMobileTab" style="flex: 1; justify-content: center; font-size: 0.76rem; padding: 0.45rem;">
+            📱 Test Mobile Lens (Open in New Tab)
+          </button>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 3: AI DETECTION & RADAR (4 cols x 2 rows) -->
+      <section class="bento-card bento-radar">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-magenta);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path>
+                <path d="M12 6a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Neural Human Threat Radar</div>
+              <div class="card-subtitle">AI TARGET TRACKING & MOTION TELEMETRY</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Radar Stats Row -->
+        <div class="radar-stats-row">
+          <div class="stat-box">
+            <div class="stat-label">Humans In View</div>
+            <div class="stat-value" id="humanCountStat">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Motion Intensity</div>
+            <div class="stat-value highlight" id="motionIntensityStat">0%</div>
+          </div>
+        </div>
+
+        <!-- Dynamic Waveform Visualizer -->
+        <div class="waveform-box">
+          <canvas id="waveformCanvas" class="waveform-canvas"></canvas>
+        </div>
+
+        <!-- Sensitivity Slider Row -->
+        <div class="radar-controls-row">
+          <div class="slider-group">
+            <span style="font-family: var(--font-hud); font-size: 0.7rem;">SENSITIVITY:</span>
+            <input type="range" id="sensitivitySlider" min="0.2" max="0.85" step="0.05" value="0.45">
+            <span id="sensitivityVal" style="font-family: var(--font-hud); font-size: 0.72rem; color: var(--accent-cyan);">45%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 4: MULTI-CAMERA WALL (8 cols x 2 rows) -->
+      <section class="bento-card bento-cam-wall">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-emerald);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                <line x1="6" y1="18" x2="6.01" y2="18"></line>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Multi-Camera Feed Matrix</div>
+              <div class="card-subtitle">CLICK ANY FEED TO SWITCH PRIMARY SURVEILLANCE FOCUS</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Camera Thumbnails Wall -->
+        <div class="cam-grid-thumbnails" id="camWallGrid">
+          <!-- Add camera slot button -->
+          <div class="cam-add-slot" id="slotAddCam" title="Activate Laptop Camera">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span style="font-family: var(--font-hud); font-size: 0.72rem;">ADD CAMERA FEED</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 5: EVENT LOG & SNAPSHOTS GALLERY (4 cols x 2 rows) -->
+      <section class="bento-card bento-event-log">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-amber);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Surveillance Event Journal</div>
+              <div class="card-subtitle">EVIDENCE SNAPSHOTS & INTRUSION ALERTS</div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="status-pill" id="dbEventsCountBadge" style="padding: 0.25rem 0.65rem; font-size: 0.68rem;">0 IN MONGODB</span>
+            <button class="glass-btn glass-btn-danger" id="btnClearEvents" style="padding: 0.25rem 0.55rem; font-size: 0.68rem;" title="Clear All MongoDB Events">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Events List -->
+        <div class="events-list" id="eventsList">
+          <div class="empty-log-placeholder" style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: 0.8rem; font-family: var(--font-hud);">
+            Awaiting human motion telemetry events...
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ====================================================================
+       SNAPSHOT LIGHTBOX MODAL
+       ==================================================================== -->
+  <div class="modal-overlay" id="snapModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div style="font-family: var(--font-hud); font-size: 0.85rem; color: var(--accent-cyan);" id="snapModalTitle">
+          INSPECTION // EVIDENCE CAPTURE
+        </div>
+        <button class="glass-btn" id="btnCloseModal" style="padding: 0.3rem 0.6rem;">✕</button>
+      </div>
+      <div class="modal-body">
+        <img id="snapModalImg" class="modal-img-preview" src="" alt="Captured Evidence">
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <a id="snapModalDownload" class="glass-btn glass-btn-primary" download="cctv-capture.jpg">
+            📥 Download High-Res Snapshot
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       BIOMETRIC & OPERATOR AUTH GATEKEEPER MODAL (2-STEP AUTHENTICATION)
+       ==================================================================== -->
+  <div class="auth-modal-overlay" id="authGatekeeperModal">
+    <div class="auth-gatekeeper-card">
+      <div class="auth-scanline"></div>
+
+      <!-- Sci-Fi Corner Brackets -->
+      <div class="hud-corner tl"></div>
+      <div class="hud-corner tr"></div>
+      <div class="hud-corner bl"></div>
+      <div class="hud-corner br"></div>
+
+      <!-- Emblem & Header -->
+      <div class="auth-header">
+        <div class="auth-eye-emblem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3" fill="#00f0ff"></circle>
+          </svg>
+        </div>
+        <div>
+          <div class="auth-title">ARGUS // ACCESS GATEWAY</div>
+          <div class="auth-subtitle">SURVEILLANCE & AI SENTINEL TERMINAL</div>
+        </div>
+      </div>
+
+      <!-- ==============================================================
+           STEP 1: LOGIN (GOOGLE, USERNAME, SIGN IN, SIGN UP, GUEST)
+           ============================================================== -->
+      <div class="auth-step-view active" id="viewCredentials">
+        <!-- 1. Login using Google Button -->
+        <button type="button" class="btn-google" id="btnGoogleLogin">
+          <svg class="google-icon-svg" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Continue with Google</span>
+        </button>
+
+        <div id="googleBtnContainerLogin" style="display: none;"></div>
+
+        <div class="auth-divider-line">
+          <span>or enter operator username</span>
+        </div>
+
+        <form id="formLoginCredentials" style="display: flex; flex-direction: column; gap: 0.95rem;">
+          <!-- 2. Username Input Only -->
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="loginUserId">Operator ID / Username</label>
+            <input type="text" id="loginUserId" class="auth-input-field" placeholder="Enter username (e.g. admin)" autocomplete="username" autofocus required>
+          </div>
+
+          <div class="auth-error-banner" id="loginErrorBanner"></div>
+
+          <!-- 3. Sign In Button -->
+          <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitLogin" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.95rem; font-family: var(--font-hud);">
+            ⚡ Sign In ➔
+          </button>
+
+          <!-- 4. Sign Up Button & 5. Guest Account Button -->
+          <div style="display: flex; gap: 0.65rem; margin-top: 0.2rem;">
+            <button type="button" id="btnGoToRegister" class="glass-btn" style="flex: 1; justify-content: center; padding: 0.72rem 0.5rem; font-size: 0.82rem; font-family: var(--font-hud); border-color: rgba(0, 240, 255, 0.4); color: var(--accent-cyan);">
+              ➕ Sign Up
+            </button>
+            <button type="button" id="btnGuestLogin" class="glass-btn" style="flex: 1; justify-content: center; padding: 0.72rem 0.5rem; font-size: 0.82rem; font-family: var(--font-hud); border-color: rgba(255, 255, 255, 0.2); color: var(--text-main);">
+              👤 Guest Account
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ==============================================================
+           STEP 2: SELECT HOW TO VERIFY (ONLY ENABLED OPTIONS VISIBLE)
+           ============================================================== -->
+      <div class="auth-step-view" id="view2FAMethods">
+        <div class="auth-2fa-badge">
+          <span>🛡️</span> VERIFY OPERATOR IDENTITY
+        </div>
+
+        <div class="auth-2fa-operator-pill">
+          <span>OPERATOR: <strong id="twoFaUsernameDisplay">admin</strong></span>
+          <button type="button" id="btnChangeOperator" style="background: none; border: none; color: var(--accent-cyan); font-family: var(--font-hud); font-size: 0.72rem; cursor: pointer; text-decoration: underline;">Change</button>
+        </div>
+
+        <div style="font-family: var(--font-hud); font-size: 0.76rem; color: var(--text-muted); text-align: center; line-height: 1.35; margin-bottom: 0.75rem;">
+          Select how you want to verify your identity to access the terminal:
+        </div>
+
+        <!-- Verification Options List (only enabled methods visible) -->
+        <div class="auth-2fa-methods-list" id="authMethodsList">
+
+          <!-- Option 1: Security Password -->
+          <div class="auth-2fa-method-item" id="btnSelectPassword" style="display: flex;">
+            <div class="auth-2fa-method-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">Security Password</div>
+              <div class="auth-2fa-method-desc">Authorize terminal access with your secret password.</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </div>
+
+          <!-- Option 2: PIN from Email -->
+          <div class="auth-2fa-method-item" id="btnSelectEmailPin" style="display: flex;">
+            <div class="auth-2fa-method-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+            </div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">PIN from Email</div>
+              <div class="auth-2fa-method-desc">Receive a 6-digit one-time passcode at your registered email.</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </div>
+
+          <!-- Option 3: Passkey (Biometric / WebAuthn) -->
+          <div class="auth-2fa-method-item" id="btnSelectPasskey" style="display: flex;">
+            <div class="auth-2fa-method-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a10 10 0 0 0-10 10c0 3.3 1.6 6.2 4.1 8"></path>
+                <path d="M12 6a6 6 0 0 0-6 6c0 1.9.9 3.6 2.3 4.7"></path>
+                <path d="M12 10a2 2 0 0 0-2 2c0 .6.3 1.2.7 1.6"></path>
+                <path d="M16 12a4 4 0 0 1-4 4"></path>
+                <path d="M20 12a8 8 0 0 0-8-8"></path>
+              </svg>
+            </div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">Passkey (Touch ID / Face ID)</div>
+              <div class="auth-2fa-method-desc">Authorize instantly with biometric passkey.</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </div>
+
+          <!-- Option 4: Security Key -->
+          <div class="auth-2fa-method-item" id="btnSelectSecurityKey" style="display: flex;">
+            <div class="auth-2fa-method-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 2l-2 2m-1-1l-3 3 2 2 3-3-2-2z"></path>
+                <circle cx="7.5" cy="15.5" r="5.5"></circle>
+                <path d="M11.5 11.5L18 5"></path>
+                <path d="M16 7l2 2"></path>
+              </svg>
+            </div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">Security Key / PIN</div>
+              <div class="auth-2fa-method-desc">Hardware FIDO2 key or Master Security PIN.</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </div>
+
+        </div>
+
+        <!-- Forgot Password Option on Verification Page -->
+        <div style="margin-top: 0.95rem; text-align: center;">
+          <button type="button" id="btnGoToForgotPassword" style="background: none; border: none; color: #ffb800; font-family: var(--font-hud); font-size: 0.8rem; cursor: pointer; text-decoration: underline; display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span>🔑</span> Forgot Password?
+          </button>
+        </div>
+
+        <button type="button" id="btn2FACancel" class="auth-back-link" style="margin-top: 0.75rem;">
+          ◂ Change Username
+        </button>
+      </div>
+
+      <!-- ==============================================================
+           STEP 2-PASS: PASSWORD VERIFICATION VIEW
+           ============================================================== -->
+      <div class="auth-step-view" id="viewVerifyPassword">
+        <div class="auth-2fa-badge">
+          <span>🔒</span> SECURITY PASSWORD
+        </div>
+
+        <div class="auth-2fa-operator-pill">
+          <span>OPERATOR: <strong id="verifyPassUsernameDisplay">admin</strong></span>
+        </div>
+
+        <form id="formVerifyPassword" style="display: flex; flex-direction: column; gap: 0.95rem;">
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="verifyPasswordInput">Enter Security Password</label>
+            <div class="auth-input-wrapper">
+              <input type="password" id="verifyPasswordInput" class="auth-input-field" placeholder="••••••••••••" autocomplete="current-password" autofocus required>
+              <button type="button" id="btnToggleVerifyPassword" class="auth-input-toggle" title="Reveal Password">👁️</button>
+            </div>
+          </div>
+
+          <div class="auth-error-banner" id="verifyPasswordErrorBanner"></div>
+
+          <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitVerifyPassword" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.95rem; font-family: var(--font-hud);">
+            Authorize &amp; Enter Console ➔
+          </button>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem;">
+            <button type="button" class="auth-back-link btn-back-to-2fa-methods" style="margin: 0;">
+              ◂ Choose Different Method
+            </button>
+            <button type="button" class="btn-trigger-forgot-pass" style="background: none; border: none; color: #ffb800; font-family: var(--font-hud); font-size: 0.74rem; cursor: pointer; text-decoration: underline;">
+              Forgot Password?
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ==============================================================
+           STEP FORGOT PASSWORD / RESET VIEW
+           ============================================================== -->
+      <div class="auth-step-view" id="viewForgotPassword">
+        <div class="auth-2fa-badge" style="background: rgba(255, 184, 0, 0.15); border-color: #ffb800; color: #ffb800;">
+          <span>🔑</span> RESET OPERATOR PASSWORD
+        </div>
+
+        <div style="font-family: var(--font-hud); font-size: 0.74rem; color: var(--text-muted); text-align: center; line-height: 1.35; margin-bottom: 0.75rem;">
+          Enter the 6-digit verification code sent to your registered email to set a new password:
+          <div style="color: var(--accent-cyan); font-weight: 700; margin-top: 0.25rem;" id="forgotPassMaskedEmail">admin@argus-surveillance.net</div>
+        </div>
+
+        <!-- Simulated Reset Code Notification in dev mode -->
+        <div class="email-demo-pill" id="resetDemoPill" title="Click to auto-fill demonstration reset code">
+          <span>⚡ Reset PIN Code:</span>
+          <span>Code is <strong id="resetDemoCode">123456</strong></span>
+          <span style="font-size: 0.65rem; color: #fff; text-decoration: underline;">(Click to Fill)</span>
+        </div>
+
+        <form id="formForgotPassword" style="display: flex; flex-direction: column; gap: 0.85rem;">
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="inputResetCode">6-Digit Verification Code</label>
+            <input type="text" id="inputResetCode" maxlength="6" class="auth-input-field email-pin-input" placeholder="••••••" autocomplete="one-time-code" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="inputResetNewPassword">New Security Password (min 6 chars)</label>
+            <input type="password" id="inputResetNewPassword" class="auth-input-field" placeholder="••••••••••••" autocomplete="new-password" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="inputResetConfirmPassword">Confirm New Password</label>
+            <input type="password" id="inputResetConfirmPassword" class="auth-input-field" placeholder="••••••••••••" autocomplete="new-password" required>
+          </div>
+
+          <div class="auth-error-banner" id="resetPasswordErrorBanner"></div>
+
+          <div style="display: flex; gap: 0.6rem;">
+            <button type="button" class="glass-btn" id="btnResendResetCode" style="flex: 1; justify-content: center; padding: 0.75rem; font-size: 0.82rem; font-family: var(--font-hud);">
+              🔄 Resend Code
+            </button>
+            <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitResetPassword" style="flex: 2; justify-content: center; padding: 0.75rem; font-size: 0.92rem; font-family: var(--font-hud);">
+              Reset &amp; Enter Console ➔
+            </button>
+          </div>
+
+          <button type="button" class="auth-back-link btn-back-to-2fa-methods" style="margin-top: 0.4rem;">
+            ◂ Back to Verification Options
+          </button>
+        </form>
+      </div>
+
+      <!-- ==============================================================
+           STEP 2A: PASSKEY VERIFICATION EXECUTION
+           ============================================================== -->
+      <div class="auth-step-view" id="view2FAPasskey">
+        <div class="auth-2fa-badge">
+          <span>⚡</span> PASSKEY VERIFICATION
+        </div>
+
+        <div class="biometric-scanner-widget">
+          <div class="biometric-pulse-ring"></div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 2a10 10 0 0 0-10 10c0 3.3 1.6 6.2 4.1 8"></path>
+            <path d="M12 6a6 6 0 0 0-6 6c0 1.9.9 3.6 2.3 4.7"></path>
+            <path d="M12 10a2 2 0 0 0-2 2c0 .6.3 1.2.7 1.6"></path>
+            <path d="M16 12a4 4 0 0 1-4 4"></path>
+            <path d="M20 12a8 8 0 0 0-8-8"></path>
+          </svg>
+        </div>
+
+        <div id="passkeyStatusText" style="font-family: var(--font-hud); font-size: 0.75rem; color: var(--text-muted); text-align: center;">
+          Touch your device biometric sensor or confirm passkey prompt...
+        </div>
+
+        <div class="auth-error-banner" id="passkeyErrorBanner"></div>
+
+        <button type="button" class="glass-btn glass-btn-primary" id="btnVerifyPasskey" style="width: 100%; justify-content: center; padding: 0.8rem; font-size: 0.95rem; font-family: var(--font-hud);">
+          ⚡ Authorize with Passkey
+        </button>
+
+        <button type="button" class="auth-back-link btn-back-to-2fa-methods">
+          ◂ Choose Different 2-Step Option
+        </button>
+      </div>
+
+      <!-- ==============================================================
+           STEP 2B: PIN FROM EMAIL VERIFICATION EXECUTION
+           ============================================================== -->
+      <div class="auth-step-view" id="view2FAEmailPin">
+        <div class="auth-2fa-badge">
+          <span>✉️</span> PIN FROM EMAIL
+        </div>
+
+        <div style="font-family: var(--font-hud); font-size: 0.74rem; color: var(--text-muted); text-align: center;">
+          Enter the 6-digit one-time PIN sent to:
+          <div style="color: var(--accent-cyan); font-weight: 700; margin-top: 0.2rem;" id="twoFaMaskedEmail">admin@argus-surveillance.net</div>
+        </div>
+
+        <!-- Simulated Email Dispatch Notification -->
+        <div class="email-demo-pill" id="emailDemoPill" title="Click to auto-fill demonstration email PIN">
+          <span>⚡ Simulated Email:</span>
+          <span>Code is <strong id="emailDemoCode">849201</strong></span>
+          <span style="font-size: 0.65rem; color: #fff; text-decoration: underline;">(Click to Fill)</span>
+        </div>
+
+        <div class="auth-input-group" style="align-items: center;">
+          <input type="text" id="inputEmailPin" maxlength="6" class="auth-input-field email-pin-input" placeholder="••••••" autocomplete="one-time-code" autofocus>
+        </div>
+
+        <div class="auth-error-banner" id="emailErrorBanner"></div>
+
+        <div style="display: flex; gap: 0.6rem;">
+          <button type="button" class="glass-btn" id="btnResendEmailCode" style="flex: 1; justify-content: center; padding: 0.75rem; font-size: 0.82rem; font-family: var(--font-hud);">
+            🔄 Resend PIN
+          </button>
+          <button type="button" class="glass-btn glass-btn-primary" id="btnVerifyEmailPin" style="flex: 2; justify-content: center; padding: 0.75rem; font-size: 0.92rem; font-family: var(--font-hud);">
+            Verify PIN ➔
+          </button>
+        </div>
+
+        <button type="button" class="auth-back-link btn-back-to-2fa-methods">
+          ◂ Choose Different 2-Step Option
+        </button>
+      </div>
+
+      <!-- ==============================================================
+           STEP 2C: SECURITY KEY VERIFICATION EXECUTION
+           ============================================================== -->
+      <div class="auth-step-view" id="view2FASecurityKey">
+        <div class="auth-2fa-badge">
+          <span>🔑</span> SECURITY KEY VERIFICATION
+        </div>
+
+        <div style="font-family: var(--font-hud); font-size: 0.74rem; color: var(--text-muted); text-align: center;">
+          Insert your hardware FIDO2 / USB security key or enter your 4-digit Master Security Key PIN:
+        </div>
+
+        <div class="auth-input-group">
+          <label class="auth-input-label" for="inputSecurityKeyPin">Security Key PIN / Token</label>
+          <input type="password" id="inputSecurityKeyPin" class="auth-input-field" placeholder="Default PIN: 7777" style="font-family: var(--font-hud); letter-spacing: 0.2em; text-align: center;">
+        </div>
+
+        <div class="auth-error-banner" id="securityKeyErrorBanner"></div>
+
+        <button type="button" class="glass-btn glass-btn-primary" id="btnVerifySecurityKey" style="width: 100%; justify-content: center; padding: 0.8rem; font-size: 0.95rem; font-family: var(--font-hud);">
+          🔑 Authorize Security Key
+        </button>
+
+        <button type="button" class="auth-back-link btn-back-to-2fa-methods">
+          ◂ Choose Different 2-Step Option
+        </button>
+      </div>
+
+      <!-- ==============================================================
+           OPTIONAL: REGISTER NEW OPERATOR
+           ============================================================== -->
+      <div class="auth-step-view" id="viewRegister">
+        <div class="auth-2fa-badge">
+          <span>➕</span> PROVISION NEW OPERATOR
+        </div>
+
+        <!-- Google Fast Provision / Sign-Up -->
+        <button type="button" class="btn-google" id="btnGoogleRegister">
+          <svg class="google-icon-svg" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Sign up with Google</span>
+        </button>
+
+        <div id="googleBtnContainerRegister" style="display: none;"></div>
+
+        <div class="auth-divider-line">
+          <span>or create manual account</span>
+        </div>
+
+        <form id="formRegisterOperator" style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="regUsername">Operator Username / ID</label>
+            <input type="text" id="regUsername" class="auth-input-field" placeholder="e.g. operator_vance" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="regDisplayName">Callsign / Display Name</label>
+            <input type="text" id="regDisplayName" class="auth-input-field" placeholder="e.g. Sentinel Vance">
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="regEmail">Operator Email (for 2-Step PIN)</label>
+            <input type="email" id="regEmail" class="auth-input-field" placeholder="e.g. vance@argus.sec">
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="regPassword">Security Password (min 6 chars)</label>
+            <input type="password" id="regPassword" class="auth-input-field" placeholder="••••••••" required>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; font-size: 0.75rem;">
+            <input type="checkbox" id="reg2FAToggle" checked style="accent-color: var(--accent-cyan);">
+            <label for="reg2FAToggle" style="color: var(--text-muted); font-family: var(--font-hud); cursor: pointer;">
+              Enable 2-Step Authentication (Recommended)
+            </label>
+          </div>
+
+          <div class="auth-error-banner" id="regErrorBanner"></div>
+
+          <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitReg" style="width: 100%; justify-content: center; padding: 0.75rem; font-size: 0.95rem; font-family: var(--font-hud);">
+            ➕ Provision Operator &amp; Login
+          </button>
+
+          <button type="button" id="btnBackToLogin" class="auth-back-link">
+            ◂ Back to Operator Sign In
+          </button>
+        </form>
+      </div>
+
+      <!-- ==============================================================
+           STEP 3: GOOGLE ACCESS GATEWAY (DIRECT POPUP & ACCOUNT CHOOSER)
+           ============================================================== -->
+      <div class="auth-step-view" id="viewGoogleAuth">
+        <div class="auth-2fa-badge">
+          <span>🌐</span> GOOGLE ACCESS GATEWAY
+        </div>
+
+        <div style="font-family: var(--font-hud); font-size: 0.76rem; color: var(--text-muted); text-align: center; margin-bottom: 0.85rem; line-height: 1.4;">
+          Select a verified Google Identity to authorize access or enter a Google account:
+        </div>
+
+        <div class="auth-divider-line" style="margin: 0.6rem 0;">
+          <span>or 1-click verified operator</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.85rem;">
+          <button type="button" class="auth-2fa-method-item btn-choose-google" data-email="nikhilkansal4224@gmail.com" data-name="Nikhil Kansal" style="cursor: pointer; text-align: left; margin: 0; padding: 0.75rem;">
+            <div class="auth-2fa-method-icon" style="background: rgba(66, 133, 244, 0.25); border-color: #4285F4; color: #fff; font-weight: 700; width: 36px; height: 36px;">N</div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">Nikhil Kansal</div>
+              <div class="auth-2fa-method-desc">nikhilkansal4224@gmail.com &bull; Primary Operator</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </button>
+
+          <button type="button" class="auth-2fa-method-item btn-choose-google" data-email="sentinel.vance@gmail.com" data-name="Dr. Vance" style="cursor: pointer; text-align: left; margin: 0; padding: 0.75rem;">
+            <div class="auth-2fa-method-icon" style="background: rgba(52, 168, 83, 0.25); border-color: #34A853; color: #fff; font-weight: 700; width: 36px; height: 36px;">V</div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">Dr. Vance</div>
+              <div class="auth-2fa-method-desc">sentinel.vance@gmail.com &bull; Field Researcher</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </button>
+        </div>
+
+        <div class="auth-divider-line" style="margin: 0.6rem 0;">
+          <span>or custom google account</span>
+        </div>
+
+        <form id="formCustomGoogleLogin" style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="customGoogleEmail">Google Account Email</label>
+            <input type="email" id="customGoogleEmail" class="auth-input-field" placeholder="your.name@gmail.com" required>
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="customGoogleName">Full Name / Callsign (optional)</label>
+            <input type="text" id="customGoogleName" class="auth-input-field" placeholder="e.g. Agent Phoenix">
+          </div>
+          <button type="submit" class="glass-btn glass-btn-primary" style="justify-content: center; padding: 0.75rem; font-size: 0.88rem; font-family: var(--font-hud); margin-top: 0.2rem;">
+            Authorize with Google ➔
+          </button>
+        </form>
+
+        <div class="auth-error-banner" id="googleAuthErrorBanner"></div>
+
+        <button type="button" id="btnBackFromGoogleAuth" class="auth-back-link" style="margin-top: 0.85rem;">
+          ◂ Return to Operator ID / Password
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       LOCKED CONSOLE RAPID UNLOCK OVERLAY
+       ==================================================================== -->
+  <div class="locked-terminal-overlay" id="lockedTerminalOverlay">
+    <div class="locked-terminal-card">
+      <div class="locked-terminal-badge">
+        <span>🔒</span> SYSTEM ARMED & LOCKED
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+        <div style="font-family: var(--font-hud); font-size: 1.1rem; color: #fff; font-weight: 700;">
+          RESUME SURVEILLANCE
+        </div>
+        <div style="font-family: var(--font-hud); font-size: 0.72rem; color: var(--text-muted);">
+          Operator: <span id="lockOperatorName" style="color: var(--accent-cyan); font-weight: 700;">Admin</span>
+        </div>
+      </div>
+
+      <!-- Lockscreen PIN Dots -->
+      <input type="hidden" id="lockPinInput" value="">
+      <div class="pin-dots-container">
+        <span class="lock-pin-dot"></span>
+        <span class="lock-pin-dot"></span>
+        <span class="lock-pin-dot"></span>
+        <span class="lock-pin-dot"></span>
+      </div>
+
+      <div class="auth-error-banner" id="lockPinError" style="margin-top: -0.25rem;"></div>
+
+      <!-- Lockscreen Numpad -->
+      <div class="auth-numpad-grid">
+        <button type="button" class="lock-numpad-btn" data-val="1">1</button>
+        <button type="button" class="lock-numpad-btn" data-val="2">2</button>
+        <button type="button" class="lock-numpad-btn" data-val="3">3</button>
+        <button type="button" class="lock-numpad-btn" data-val="4">4</button>
+        <button type="button" class="lock-numpad-btn" data-val="5">5</button>
+        <button type="button" class="lock-numpad-btn" data-val="6">6</button>
+        <button type="button" class="lock-numpad-btn" data-val="7">7</button>
+        <button type="button" class="lock-numpad-btn" data-val="8">8</button>
+        <button type="button" class="lock-numpad-btn" data-val="9">9</button>
+        <button type="button" class="lock-numpad-btn btn-action-key" data-val="clear">C</button>
+        <button type="button" class="lock-numpad-btn" data-val="0">0</button>
+        <button type="button" class="lock-numpad-btn btn-action-key" data-val="back">⌫</button>
+      </div>
+
+      <div style="display: flex; gap: 0.6rem; width: 100%;">
+        <button type="button" class="glass-btn" id="btnLockSwitchOperator" style="flex: 1; justify-content: center; font-size: 0.75rem;">
+          Switch User
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       OPERATOR SETTINGS & 2-STEP AUTHENTICATION CONFIGURATION MODAL
+       ==================================================================== -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="settings-modal-card">
+      <div class="auth-scanline"></div>
+
+      <!-- Corner Brackets -->
+      <div class="hud-corner tl"></div>
+      <div class="hud-corner tr"></div>
+      <div class="hud-corner bl"></div>
+      <div class="hud-corner br"></div>
+
+      <!-- Modal Header -->
+      <div class="settings-modal-header">
+        <div class="settings-modal-title">
+          <div class="auth-eye-emblem" style="width: 42px; height: 42px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </div>
+          <div>
+            <div style="font-family: var(--font-hud); font-size: 1.05rem; font-weight: 800; color: #fff;">
+              OPERATOR SECURITY &amp; SETTINGS
+            </div>
+            <div style="font-family: var(--font-hud); font-size: 0.68rem; color: var(--text-muted);">
+              ACCOUNT PROFILE &bull; TWO-STEP AUTHENTICATION MATRIX
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="glass-btn" id="btnCloseSettings" style="padding: 0.35rem 0.65rem;">✕</button>
+      </div>
+
+      <!-- Settings Tabs Bar -->
+      <div class="settings-tabs-bar">
+        <button type="button" class="settings-tab-btn active" id="tabSettingsAccount">
+          👤 Account Details
+        </button>
+        <button type="button" class="settings-tab-btn" id="tabSettings2FA">
+          🛡️ 2-Step Auth Setup
+        </button>
+        <button type="button" class="settings-tab-btn" id="tabSettingsPassword">
+          🔒 Security Password
+        </button>
+        <button type="button" class="settings-tab-btn" id="tabSettingsApi">
+          🌐 Cloud API (Render)
+        </button>
+      </div>
+
+      <!-- Feedback Banner -->
+      <div class="settings-feedback-banner" id="settingsFeedbackBanner"></div>
+
+      <!-- ==============================================================
+           PANEL 1: ACCOUNT DETAILS
+           ============================================================== -->
+      <div class="settings-panel active" id="panelSettingsAccount">
+        <form id="formUpdateProfile" style="display: flex; flex-direction: column; gap: 1rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="auth-input-group">
+              <label class="auth-input-label">Operator ID (Permanent)</label>
+              <input type="text" id="settingProfileId" class="auth-input-field" disabled style="opacity: 0.75; cursor: not-allowed;">
+            </div>
+
+            <div class="auth-input-group">
+              <label class="auth-input-label">Security Clearance</label>
+              <input type="text" id="settingProfileClearance" class="auth-input-field" disabled style="opacity: 0.75; cursor: not-allowed; color: var(--accent-cyan); font-weight: 700;">
+            </div>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="settingDisplayName">Callsign / Display Name</label>
+            <input type="text" id="settingDisplayName" class="auth-input-field" placeholder="e.g. Lead Security Sentinel" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="settingEmail">Operator Email (Used for 2-Step PIN)</label>
+            <input type="email" id="settingEmail" class="auth-input-field" placeholder="e.g. admin@argus-surveillance.net" required>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+            <button type="submit" class="glass-btn glass-btn-primary" id="btnSaveProfile">
+              💾 Save Account Changes
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ==============================================================
+           PANEL 2: 2-STEP AUTHENTICATION SETUP & CONFIGURATION
+           ============================================================== -->
+      <div class="settings-panel" id="panelSettings2FA">
+        <!-- Master Toggle Banner -->
+        <div class="settings-2fa-banner">
+          <div class="settings-switch-label">
+            <div style="font-family: var(--font-hud); font-size: 0.88rem; font-weight: 700; color: #fff;">
+              Two-Step Authentication Gatekeeper
+            </div>
+            <div style="font-size: 0.74rem; color: var(--text-muted); line-height: 1.35;">
+              Require passkey, email PIN, or security key challenge when signing into this surveillance console.
+            </div>
+          </div>
+
+          <label class="switch-container" title="Toggle Two-Step Authentication">
+            <input type="checkbox" id="settingMaster2FAToggle" checked>
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <div style="font-family: var(--font-hud); font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+          CONFIGURED VERIFICATION METHODS:
+        </div>
+
+        <!-- 3 Verification Methods Management Cards -->
+        <div class="settings-methods-grid">
+
+          <!-- Method 1: Passkey (Biometric / WebAuthn) -->
+          <div class="settings-method-card">
+            <div class="settings-method-header">
+              <div class="settings-method-title-group">
+                <div class="auth-2fa-method-icon" style="width: 32px; height: 32px; font-size: 1rem;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a10 10 0 0 0-10 10c0 3.3 1.6 6.2 4.1 8"></path>
+                    <path d="M12 6a6 6 0 0 0-6 6c0 1.9.9 3.6 2.3 4.7"></path>
+                    <path d="M12 10a2 2 0 0 0-2 2c0 .6.3 1.2.7 1.6"></path>
+                    <path d="M16 12a4 4 0 0 1-4 4"></path>
+                    <path d="M20 12a8 8 0 0 0-8-8"></path>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-family: var(--font-hud); font-size: 0.82rem; font-weight: 700; color: #fff;">
+                    Passkey (Biometric / WebAuthn)
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted);">
+                    Touch ID, Face ID, Windows Hello, or device passkey hardware prompt.
+                  </div>
+                </div>
+              </div>
+              <span class="settings-badge settings-badge-active" id="badgePasskeyStatus">ACTIVE</span>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+              <button type="button" class="glass-btn glass-btn-sm" id="btnTestPasskey">
+                ⚡ Test Device Passkey
+              </button>
+            </div>
+          </div>
+
+          <!-- Method 2: PIN from Email -->
+          <div class="settings-method-card">
+            <div class="settings-method-header">
+              <div class="settings-method-title-group">
+                <div class="auth-2fa-method-icon" style="width: 32px; height: 32px; font-size: 1rem;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                    <polyline points="22,6 12,13 2,6"></polyline>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-family: var(--font-hud); font-size: 0.82rem; font-weight: 700; color: #fff;">
+                    PIN from Email (One-Time Passcode)
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted);">
+                    Dispatches a 6-digit PIN to: <strong id="settingEmailDisplay" style="color: var(--accent-cyan);">admin@argus-surveillance.net</strong>
+                  </div>
+                </div>
+              </div>
+              <span class="settings-badge settings-badge-active">READY</span>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+              <button type="button" class="glass-btn glass-btn-sm" id="btnTestEmailPin">
+                ✉️ Send Test PIN Code
+              </button>
+            </div>
+          </div>
+
+          <!-- Method 3: Security Key (Hardware PIN) -->
+          <div class="settings-method-card">
+            <div class="settings-method-header">
+              <div class="settings-method-title-group">
+                <div class="auth-2fa-method-icon" style="width: 32px; height: 32px; font-size: 1rem;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2l-2 2m-1-1l-3 3 2 2 3-3-2-2z"></path>
+                    <circle cx="7.5" cy="15.5" r="5.5"></circle>
+                    <path d="M11.5 11.5L18 5"></path>
+                    <path d="M16 7l2 2"></path>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-family: var(--font-hud); font-size: 0.82rem; font-weight: 700; color: #fff;">
+                    Security Key / Master FIDO
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted);">
+                    Hardware USB/NFC FIDO2 key or dedicated 4-digit Master Security Key PIN.
+                  </div>
+                </div>
+              </div>
+              <span class="settings-badge settings-badge-active">CONFIGURED</span>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.25rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
+                <label style="font-family: var(--font-hud); font-size: 0.72rem; color: var(--text-muted); white-space: nowrap;">Key PIN:</label>
+                <input type="text" id="settingSecurityKeyPin" maxlength="6" class="auth-input-field" placeholder="7777" style="max-width: 140px; font-family: var(--font-hud); letter-spacing: 0.15em; text-align: center; padding: 0.4rem;">
+              </div>
+              <button type="button" class="glass-btn glass-btn-sm glass-btn-primary" id="btnUpdateSecurityKeyPin">
+                Save Key PIN
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ==============================================================
+           PANEL 3: CHANGE PASSWORD
+           ============================================================== -->
+      <div class="settings-panel" id="panelSettingsPassword">
+        <form id="formChangePassword" style="display: flex; flex-direction: column; gap: 1rem;">
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="settingCurrentPassword">Current Security Password</label>
+            <input type="password" id="settingCurrentPassword" class="auth-input-field" placeholder="••••••••••••" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="settingNewPassword">New Security Password (min 6 chars)</label>
+            <input type="password" id="settingNewPassword" class="auth-input-field" placeholder="••••••••••••" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="settingConfirmPassword">Confirm New Security Password</label>
+            <input type="password" id="settingConfirmPassword" class="auth-input-field" placeholder="••••••••••••" required>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+            <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitChangePassword">
+              🔒 Update Security Password
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ==============================================================
+           PANEL 4: CLOUD API & RENDER BACKEND
+           ============================================================== -->
+      <div class="settings-panel" id="panelSettingsApi">
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; background: rgba(0, 240, 255, 0.05); border: 1px solid rgba(0, 240, 255, 0.2); padding: 0.75rem 1rem; border-radius: 6px;">
+            <div style="font-family: var(--font-hud); font-size: 0.75rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.25rem;">RENDER CLOUD API INTEGRATION</div>
+            Configure your Render backend URL (e.g. <span style="color: #fff; font-family: monospace;">https://argus-cctv-api.onrender.com</span>). When set, all database, auth, and telemetry traffic routes to your Render cloud container.
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="settingApiBaseUrl">Backend Base URL (Render / Cloud)</label>
+            <input type="url" id="settingApiBaseUrl" class="auth-input-field" placeholder="https://argus-cctv-api.onrender.com" autocomplete="off" spellcheck="false">
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+            <div style="display: flex; gap: 0.5rem;">
+              <button type="button" class="glass-btn glass-btn-primary" id="btnSaveApiBase">
+                💾 Save API URL
+              </button>
+              <button type="button" class="glass-btn" id="btnResetApiBase">
+                Auto / Same-Origin
+              </button>
+            </div>
+            <button type="button" class="glass-btn glass-btn-warning" id="btnTestApiHealth">
+              ⚡ Test Connection
+            </button>
+          </div>
+
+          <div id="apiHealthStatusBox" style="display:none; padding: 0.75rem 1rem; border-radius: 6px; font-family: var(--font-hud); font-size: 0.75rem;"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Application Logic Scripts -->
+  <script src="js/api-config.js"></script>
+  <script src="js/surreal-bg.js"></script>
+  <script src="js/detector.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "argus-cctv-backend",
+  "version": "1.0.0",
+  "description": "ARGUS Surreal CCTV Backend API for Render Hosting",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "db:init": "node scripts/init-db.js",
+    "db:recreate": "node scripts/init-db.js --reset"
+  },
+  "keywords": [
+    "cctv",
+    "render",
+    "mongodb",
+    "api"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "localtunnel": "^2.0.2",
+    "mongodb": "^7.7.0"
+  }
+}

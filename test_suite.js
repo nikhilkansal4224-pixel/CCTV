@@ -84,7 +84,7 @@ async function runTestSuite() {
   assert(resCss.status === 200 && resCss.raw.includes('btn-google'), 'Stylesheet (/css/style.css)', 'CSS loads with Google styling');
 
   const resAuthJs = await request('/js/auth.js');
-  assert(resAuthJs.status === 200 && resAuthJs.raw.includes('checkGoogleOAuthRedirect'), 'Auth Engine (/js/auth.js)', 'Client auth engine loaded');
+  assert(resAuthJs.status === 200 && resAuthJs.raw.includes('ArgusAuth'), 'Auth Engine (/js/auth.js)', 'Client auth engine loaded');
 
   const resApiConfig = await request('/js/api-config.js');
   assert(resApiConfig.status === 200 && resApiConfig.raw.includes('window.apiUrl'), 'API Config Module (/js/api-config.js)', 'Dynamic API resolver served');

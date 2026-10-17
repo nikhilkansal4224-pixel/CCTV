@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "framework": null,
+  "routes": [
+    {
+      "src": "/api/auth/(.*)",
+      "dest": "/api/auth.js?action=$1"
+    },
+    {
+      "src": "/api/auth",
+      "dest": "/api/auth.js"
+    },
+    {
+      "src": "/api/cameras/(.*)",
+      "dest": "/api/cameras/$1.js"
+    },
+    {
+      "src": "/api/mongodb/(.*)",
+      "dest": "/api/mongodb/$1.js"
+    },
+    {
+      "src": "/api/events",
+      "dest": "/api/events.js"
+    },
+    {
+      "src": "/api/network-ip",
+      "dest": "/api/network-ip.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.js"
+    },
+    {
+      "src": "/camera",
+      "dest": "/camera.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
+}

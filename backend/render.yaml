@@ -1,0 +1,28 @@
+# Render Blueprint Specification for ARGUS Surreal CCTV Backend API
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: argus-cctv-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        value: mongodb+srv://Vercel-Admin-atlas-sky-chair:7JvEYgqj5UogP7tH@atlas-sky-chair.cqvbpkj.mongodb.net/?retryWrites=true&w=majority
+      - key: DB_NAME
+        value: cctv_surveillance
+      - key: GOOGLE_CLIENT_ID
+        value: 473264498286-5l7grtjn65fbm8jq57v141hefb185uum.apps.googleusercontent.com
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: AUTH_SALT
+        value: argus_default_salt_2026
