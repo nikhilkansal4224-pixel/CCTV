@@ -43,12 +43,12 @@ module.exports = async function handler(req, res) {
     action = cleanUrl.replace(/^\/api\/auth\/?/, '').toLowerCase();
   }
 
-  const token = req.headers.authorization || '';
+  const token = (req.headers && req.headers.authorization) || '';
 
   try {
     // 1. Google OAuth Client ID
     if (action === 'google-client-id') {
-      const clientId = process.env.GOOGLE_CLIENT_ID || '';
+      const clientId = process.env.GOOGLE_CLIENT_ID || '473264498286-5l7grtjn65fbm8jq57v141hefb185uum.apps.googleusercontent.com';
       return res.status(200).json({ clientId });
     }
 

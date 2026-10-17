@@ -260,7 +260,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/auth/google-client-id' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      clientId: process.env.GOOGLE_CLIENT_ID || ''
+      clientId: process.env.GOOGLE_CLIENT_ID || '473264498286-5l7grtjn65fbm8jq57v141hefb185uum.apps.googleusercontent.com'
     }));
     return;
   }
