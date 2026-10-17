@@ -472,17 +472,10 @@
       </div>
 
       <!-- ==============================================================
-           STEP 1: UNIFIED CREDENTIALS LOGIN (OPERATOR ID & PASSWORD)
+           STEP 1: LOGIN (GOOGLE, USERNAME, SIGN IN, SIGN UP, GUEST)
            ============================================================== -->
       <div class="auth-step-view active" id="viewCredentials">
-        <!-- Quick 1-Click Demo Login Banner -->
-        <div class="auth-demo-banner btn-demo-quick-login" title="Click for instant demonstration authorization">
-          <span class="auth-demo-tag">⚡ QUICK DEMO ACCESS</span>
-          <span class="auth-demo-text">ID: <strong>admin</strong> / Pass: <strong>password123</strong></span>
-          <span style="font-family: var(--font-hud); color: var(--accent-cyan); font-weight: 700;">Login ➔</span>
-        </div>
-
-        <!-- Google Fast Login -->
+        <!-- 1. Login using Google Button -->
         <button type="button" class="btn-google" id="btnGoogleLogin">
           <svg class="google-icon-svg" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -496,65 +489,87 @@
         <div id="googleBtnContainerLogin" style="display: none;"></div>
 
         <div class="auth-divider-line">
-          <span>or operator credentials</span>
+          <span>or enter operator username</span>
         </div>
 
         <form id="formLoginCredentials" style="display: flex; flex-direction: column; gap: 0.95rem;">
+          <!-- 2. Username Input Only -->
           <div class="auth-input-group">
             <label class="auth-input-label" for="loginUserId">Operator ID / Username</label>
-            <input type="text" id="loginUserId" class="auth-input-field" placeholder="e.g. admin" autocomplete="username" required>
-          </div>
-
-          <div class="auth-input-group">
-            <label class="auth-input-label" for="loginPassword">Security Password</label>
-            <div class="auth-input-wrapper">
-              <input type="password" id="loginPassword" class="auth-input-field" placeholder="••••••••••••" autocomplete="current-password" required>
-              <button type="button" id="btnTogglePassword" class="auth-input-toggle" title="Reveal Password">👁️</button>
-            </div>
+            <input type="text" id="loginUserId" class="auth-input-field" placeholder="Enter username (e.g. admin)" autocomplete="username" autofocus required>
           </div>
 
           <div class="auth-error-banner" id="loginErrorBanner"></div>
 
-          <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitLogin" style="width: 100%; justify-content: center; padding: 0.8rem; font-size: 0.95rem; font-family: var(--font-hud);">
-            ⚡ Authenticate &amp; Proceed ➔
+          <!-- 3. Sign In Button -->
+          <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitLogin" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.95rem; font-family: var(--font-hud);">
+            ⚡ Sign In ➔
           </button>
 
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem; font-size: 0.72rem; font-family: var(--font-hud);">
-            <span style="color: var(--text-muted);">2-Step Verification: <strong style="color: var(--accent-emerald);">ENFORCED</strong></span>
-            <button type="button" id="btnGoToRegister" class="auth-back-link" style="margin: 0; color: var(--accent-cyan);">
-              + Provision Operator
+          <!-- 4. Sign Up Button & 5. Guest Account Button -->
+          <div style="display: flex; gap: 0.65rem; margin-top: 0.2rem;">
+            <button type="button" id="btnGoToRegister" class="glass-btn" style="flex: 1; justify-content: center; padding: 0.72rem 0.5rem; font-size: 0.82rem; font-family: var(--font-hud); border-color: rgba(0, 240, 255, 0.4); color: var(--accent-cyan);">
+              ➕ Sign Up
+            </button>
+            <button type="button" id="btnGuestLogin" class="glass-btn" style="flex: 1; justify-content: center; padding: 0.72rem 0.5rem; font-size: 0.82rem; font-family: var(--font-hud); border-color: rgba(255, 255, 255, 0.2); color: var(--text-main);">
+              👤 Guest Account
             </button>
           </div>
         </form>
       </div>
 
       <!-- ==============================================================
-           STEP 2: 2-STEP AUTHENTICATION METHOD SELECTION
+           STEP 2: SELECT HOW TO VERIFY (ONLY ENABLED OPTIONS VISIBLE)
            ============================================================== -->
       <div class="auth-step-view" id="view2FAMethods">
         <div class="auth-2fa-badge">
-          <span>🛡️</span> TWO-STEP AUTHENTICATION
+          <span>🛡️</span> VERIFY OPERATOR IDENTITY
         </div>
 
         <div class="auth-2fa-operator-pill">
           <span>OPERATOR: <strong id="twoFaUsernameDisplay">admin</strong></span>
-          <span style="color: var(--accent-cyan); font-size: 0.68rem;">CHALLENGE ACTIVE</span>
+          <button type="button" id="btnChangeOperator" style="background: none; border: none; color: var(--accent-cyan); font-family: var(--font-hud); font-size: 0.72rem; cursor: pointer; text-decoration: underline;">Change</button>
         </div>
 
-        <div style="font-family: var(--font-hud); font-size: 0.74rem; color: var(--text-muted); text-align: center; line-height: 1.35; margin-bottom: 0.75rem;">
-          Select your secondary verification method to authorize surveillance terminal access:
+        <div style="font-family: var(--font-hud); font-size: 0.76rem; color: var(--text-muted); text-align: center; line-height: 1.35; margin-bottom: 0.75rem;">
+          Select how you want to verify your identity to access the terminal:
         </div>
 
-        <!-- Quick 1-Click Authorize & Proceed into Dashboard -->
-        <button type="button" class="glass-btn glass-btn-primary" id="btnQuick2FAProceed" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.92rem; font-family: var(--font-hud); margin-bottom: 0.75rem; background: linear-gradient(135deg, rgba(0, 240, 255, 0.35), rgba(0, 110, 255, 0.45)); border-color: #00f0ff; box-shadow: 0 0 20px rgba(0, 240, 255, 0.35);">
-          ⚡ Instant Verification &amp; Enter Dashboard ➔
-        </button>
+        <!-- Verification Options List (only enabled methods visible) -->
+        <div class="auth-2fa-methods-list" id="authMethodsList">
 
-        <!-- 3 Required 2FA Verification Options -->
-        <div class="auth-2fa-methods-list">
+          <!-- Option 1: Security Password -->
+          <div class="auth-2fa-method-item" id="btnSelectPassword" style="display: flex;">
+            <div class="auth-2fa-method-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">Security Password</div>
+              <div class="auth-2fa-method-desc">Authorize terminal access with your secret password.</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </div>
 
-          <!-- Option 1: Passkey (Biometric / WebAuthn) -->
-          <div class="auth-2fa-method-item" id="btnSelectPasskey">
+          <!-- Option 2: PIN from Email -->
+          <div class="auth-2fa-method-item" id="btnSelectEmailPin" style="display: flex;">
+            <div class="auth-2fa-method-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+            </div>
+            <div class="auth-2fa-method-info">
+              <div class="auth-2fa-method-title">PIN from Email</div>
+              <div class="auth-2fa-method-desc">Receive a 6-digit one-time passcode at your registered email.</div>
+            </div>
+            <div class="auth-2fa-method-arrow">➔</div>
+          </div>
+
+          <!-- Option 3: Passkey (Biometric / WebAuthn) -->
+          <div class="auth-2fa-method-item" id="btnSelectPasskey" style="display: flex;">
             <div class="auth-2fa-method-icon">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 2a10 10 0 0 0-10 10c0 3.3 1.6 6.2 4.1 8"></path>
@@ -565,29 +580,14 @@
               </svg>
             </div>
             <div class="auth-2fa-method-info">
-              <div class="auth-2fa-method-title">Passkey (Biometric / WebAuthn)</div>
-              <div class="auth-2fa-method-desc">Authorize instantly with Touch ID, Face ID, or Windows Hello.</div>
+              <div class="auth-2fa-method-title">Passkey (Touch ID / Face ID)</div>
+              <div class="auth-2fa-method-desc">Authorize instantly with biometric passkey.</div>
             </div>
             <div class="auth-2fa-method-arrow">➔</div>
           </div>
 
-          <!-- Option 2: PIN from Email -->
-          <div class="auth-2fa-method-item" id="btnSelectEmailPin">
-            <div class="auth-2fa-method-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                <polyline points="22,6 12,13 2,6"></polyline>
-              </svg>
-            </div>
-            <div class="auth-2fa-method-info">
-              <div class="auth-2fa-method-title">PIN from Email</div>
-              <div class="auth-2fa-method-desc">Receive a 6-digit one-time security passcode at your registered email.</div>
-            </div>
-            <div class="auth-2fa-method-arrow">➔</div>
-          </div>
-
-          <!-- Option 3: Security Key -->
-          <div class="auth-2fa-method-item" id="btnSelectSecurityKey">
+          <!-- Option 4: Security Key -->
+          <div class="auth-2fa-method-item" id="btnSelectSecurityKey" style="display: flex;">
             <div class="auth-2fa-method-icon">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 2l-2 2m-1-1l-3 3 2 2 3-3-2-2z"></path>
@@ -597,17 +597,115 @@
               </svg>
             </div>
             <div class="auth-2fa-method-info">
-              <div class="auth-2fa-method-title">Security Key</div>
-              <div class="auth-2fa-method-desc">Hardware FIDO2 / USB physical key or Master Security PIN.</div>
+              <div class="auth-2fa-method-title">Security Key / PIN</div>
+              <div class="auth-2fa-method-desc">Hardware FIDO2 key or Master Security PIN.</div>
             </div>
             <div class="auth-2fa-method-arrow">➔</div>
           </div>
 
         </div>
 
-        <button type="button" id="btn2FACancel" class="auth-back-link">
-          ◂ Cancel &amp; Return to ID / Password
+        <!-- Forgot Password Option on Verification Page -->
+        <div style="margin-top: 0.95rem; text-align: center;">
+          <button type="button" id="btnGoToForgotPassword" style="background: none; border: none; color: #ffb800; font-family: var(--font-hud); font-size: 0.8rem; cursor: pointer; text-decoration: underline; display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span>🔑</span> Forgot Password?
+          </button>
+        </div>
+
+        <button type="button" id="btn2FACancel" class="auth-back-link" style="margin-top: 0.75rem;">
+          ◂ Change Username
         </button>
+      </div>
+
+      <!-- ==============================================================
+           STEP 2-PASS: PASSWORD VERIFICATION VIEW
+           ============================================================== -->
+      <div class="auth-step-view" id="viewVerifyPassword">
+        <div class="auth-2fa-badge">
+          <span>🔒</span> SECURITY PASSWORD
+        </div>
+
+        <div class="auth-2fa-operator-pill">
+          <span>OPERATOR: <strong id="verifyPassUsernameDisplay">admin</strong></span>
+        </div>
+
+        <form id="formVerifyPassword" style="display: flex; flex-direction: column; gap: 0.95rem;">
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="verifyPasswordInput">Enter Security Password</label>
+            <div class="auth-input-wrapper">
+              <input type="password" id="verifyPasswordInput" class="auth-input-field" placeholder="••••••••••••" autocomplete="current-password" autofocus required>
+              <button type="button" id="btnToggleVerifyPassword" class="auth-input-toggle" title="Reveal Password">👁️</button>
+            </div>
+          </div>
+
+          <div class="auth-error-banner" id="verifyPasswordErrorBanner"></div>
+
+          <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitVerifyPassword" style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.95rem; font-family: var(--font-hud);">
+            Authorize &amp; Enter Console ➔
+          </button>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem;">
+            <button type="button" class="auth-back-link btn-back-to-2fa-methods" style="margin: 0;">
+              ◂ Choose Different Method
+            </button>
+            <button type="button" class="btn-trigger-forgot-pass" style="background: none; border: none; color: #ffb800; font-family: var(--font-hud); font-size: 0.74rem; cursor: pointer; text-decoration: underline;">
+              Forgot Password?
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ==============================================================
+           STEP FORGOT PASSWORD / RESET VIEW
+           ============================================================== -->
+      <div class="auth-step-view" id="viewForgotPassword">
+        <div class="auth-2fa-badge" style="background: rgba(255, 184, 0, 0.15); border-color: #ffb800; color: #ffb800;">
+          <span>🔑</span> RESET OPERATOR PASSWORD
+        </div>
+
+        <div style="font-family: var(--font-hud); font-size: 0.74rem; color: var(--text-muted); text-align: center; line-height: 1.35; margin-bottom: 0.75rem;">
+          Enter the 6-digit verification code sent to your registered email to set a new password:
+          <div style="color: var(--accent-cyan); font-weight: 700; margin-top: 0.25rem;" id="forgotPassMaskedEmail">admin@argus-surveillance.net</div>
+        </div>
+
+        <!-- Simulated Reset Code Notification in dev mode -->
+        <div class="email-demo-pill" id="resetDemoPill" title="Click to auto-fill demonstration reset code">
+          <span>⚡ Reset PIN Code:</span>
+          <span>Code is <strong id="resetDemoCode">123456</strong></span>
+          <span style="font-size: 0.65rem; color: #fff; text-decoration: underline;">(Click to Fill)</span>
+        </div>
+
+        <form id="formForgotPassword" style="display: flex; flex-direction: column; gap: 0.85rem;">
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="inputResetCode">6-Digit Verification Code</label>
+            <input type="text" id="inputResetCode" maxlength="6" class="auth-input-field email-pin-input" placeholder="••••••" autocomplete="one-time-code" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="inputResetNewPassword">New Security Password (min 6 chars)</label>
+            <input type="password" id="inputResetNewPassword" class="auth-input-field" placeholder="••••••••••••" autocomplete="new-password" required>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label" for="inputResetConfirmPassword">Confirm New Password</label>
+            <input type="password" id="inputResetConfirmPassword" class="auth-input-field" placeholder="••••••••••••" autocomplete="new-password" required>
+          </div>
+
+          <div class="auth-error-banner" id="resetPasswordErrorBanner"></div>
+
+          <div style="display: flex; gap: 0.6rem;">
+            <button type="button" class="glass-btn" id="btnResendResetCode" style="flex: 1; justify-content: center; padding: 0.75rem; font-size: 0.82rem; font-family: var(--font-hud);">
+              🔄 Resend Code
+            </button>
+            <button type="submit" class="glass-btn glass-btn-primary" id="btnSubmitResetPassword" style="flex: 2; justify-content: center; padding: 0.75rem; font-size: 0.92rem; font-family: var(--font-hud);">
+              Reset &amp; Enter Console ➔
+            </button>
+          </div>
+
+          <button type="button" class="auth-back-link btn-back-to-2fa-methods" style="margin-top: 0.4rem;">
+            ◂ Back to Verification Options
+          </button>
+        </form>
       </div>
 
       <!-- ==============================================================

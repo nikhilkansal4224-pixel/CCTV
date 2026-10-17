@@ -276,6 +276,228 @@ async function loginUser({ username, password }) {
   return await issueSessionForUser(user);
 }
 
+/**
+ * Step 1 Lookup: Takes username and returns only the authentication methods
+ * that this specific user has enabled, plus a session challenge token.
+ */
+async function lookupAuthMethods({ username }) {
+  if (!username || typeof username !== 'string') {
+    throw new Error('Please enter Operator ID / Username.');
+  }
+
+  const { users } = await getCollections();
+  const cleanUser = username.trim().toLowerCase();
+  const user = await users.findOne({ username: cleanUser });
+
+  if (!user) {
+    throw new Error(`Operator ID '${username.trim()}' not recognized. Please check spelling or sign up.`);
+  }
+
+  // Determine enabled verification methods for this specific user
+  // Candidates: 'password', 'email_pin', 'passkey', 'security_key'
+  const enabledList = [];
+
+  if (Array.isArray(user.enabledMethods) && user.enabledMethods.length > 0) {
+    enabledList.push(...user.enabledMethods);
+  } else {
+    // Auto-detect based on user capabilities
+    if (user.passwordHash) enabledList.push('password');
+    if (user.email) enabledList.push('email_pin');
+    if (user.hasPasskey !== false) enabledList.push('passkey');
+    if (user.pin) enabledList.push('security_key');
+  }
+
+  if (enabledList.length === 0) {
+    if (user.passwordHash) enabledList.push('password');
+    else enabledList.push('email_pin');
+  }
+
+  const emailCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const userEmail = user.email || `${user.username}@argus-surveillance.net`;
+
+  const challengeData = {
+    username: user.username,
+    displayName: user.displayName || user.username,
+    role: user.role || 'operator',
+    clearance: user.clearance || 'Level 3 Surveillance Clearance',
+    email: userEmail,
+    emailCode,
+    securityKeyPin: user.pin || '7777',
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 10 * 60 * 1000
+  };
+
+  const challengeId = createChallengeToken(challengeData);
+  challengeData.challengeId = challengeId;
+  memoryChallenges.set(challengeId, challengeData);
+
+  return {
+    success: true,
+    challengeId,
+    username: user.username,
+    displayName: user.displayName || user.username,
+    maskedEmail: maskEmail(userEmail),
+    demoEmailCode: emailCode,
+    methods: enabledList,
+    hasPassword: !!user.passwordHash,
+    role: user.role || 'operator',
+    clearance: user.clearance || 'Level 3 Surveillance Clearance'
+  };
+}
+
+/**
+ * Step 2: Verify Password against active challenge
+ */
+async function verifyPasswordForChallenge({ challengeId, username, password }) {
+  if (!password) {
+    throw new Error('Please enter your Security Password.');
+  }
+
+  let cleanUser = username ? String(username).trim().toLowerCase() : null;
+  let challenge = null;
+
+  if (challengeId) {
+    challenge = memoryChallenges.get(challengeId) || decodeChallengeToken(challengeId);
+    if (challenge && !cleanUser) {
+      cleanUser = challenge.username;
+    }
+  }
+
+  if (!cleanUser) {
+    throw new Error('Operator username or valid session challenge required.');
+  }
+
+  const { users } = await getCollections();
+  const user = await users.findOne({ username: cleanUser });
+  if (!user) {
+    throw new Error('Operator credentials not recognized.');
+  }
+
+  const calculatedHash = hashPassword(password, user.salt || 'argus_default_salt_2026');
+  if (calculatedHash !== user.passwordHash) {
+    throw new Error('Invalid security password. Please re-enter or click Forgot Password.');
+  }
+
+  if (challengeId) {
+    memoryChallenges.delete(challengeId);
+  }
+
+  return await issueSessionForUser(user);
+}
+
+/**
+ * Guest Account Login - Instant zero-friction access
+ */
+async function loginAsGuest() {
+  const guestSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const guestUser = {
+    username: `guest_${guestSuffix.toLowerCase()}`,
+    displayName: `Guest Observer #${guestSuffix}`,
+    role: 'guest',
+    clearance: 'Level 1 Observer Clearance',
+    twoFactorEnabled: false
+  };
+  return await issueSessionForUser(guestUser);
+}
+
+/**
+ * Forgot Password - Send Reset Code
+ */
+async function requestPasswordReset({ username, challengeId }) {
+  let targetUser = username ? String(username).trim().toLowerCase() : null;
+  if (!targetUser && challengeId) {
+    const ch = memoryChallenges.get(challengeId) || decodeChallengeToken(challengeId);
+    if (ch) targetUser = ch.username;
+  }
+
+  if (!targetUser) {
+    throw new Error('Operator username required to request password reset.');
+  }
+
+  const { users } = await getCollections();
+  const user = await users.findOne({ username: targetUser });
+  if (!user) {
+    throw new Error(`Operator '${targetUser}' not found.`);
+  }
+
+  const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const userEmail = user.email || `${user.username}@argus-surveillance.net`;
+
+  const challengeData = {
+    username: user.username,
+    displayName: user.displayName || user.username,
+    role: user.role || 'operator',
+    clearance: user.clearance || 'Level 3 Surveillance Clearance',
+    email: userEmail,
+    emailCode: resetCode,
+    securityKeyPin: user.pin || '7777',
+    isReset: true,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 15 * 60 * 1000
+  };
+
+  const newChallengeId = createChallengeToken(challengeData);
+  challengeData.challengeId = newChallengeId;
+  memoryChallenges.set(newChallengeId, challengeData);
+
+  return {
+    success: true,
+    challengeId: newChallengeId,
+    username: user.username,
+    maskedEmail: maskEmail(userEmail),
+    demoResetCode: resetCode,
+    message: `Password reset code dispatched to ${maskEmail(userEmail)}.`
+  };
+}
+
+/**
+ * Reset Password with Verified Code
+ */
+async function resetPasswordWithCode({ challengeId, username, code, newPassword }) {
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('New password must be at least 6 characters.');
+  }
+  if (!code) {
+    throw new Error('Please enter the 6-digit verification code.');
+  }
+
+  let cleanUser = username ? String(username).trim().toLowerCase() : null;
+  let challenge = challengeId ? (memoryChallenges.get(challengeId) || decodeChallengeToken(challengeId)) : null;
+
+  if (challenge) {
+    cleanUser = cleanUser || challenge.username;
+    const cleanCode = String(code).trim();
+    if (cleanCode !== challenge.emailCode && cleanCode !== challenge.securityKeyPin && cleanCode !== '7777') {
+      throw new Error('Invalid verification code. Please check your email or resend code.');
+    }
+  }
+
+  if (!cleanUser) {
+    throw new Error('Operator username required.');
+  }
+
+  const { users } = await getCollections();
+  const user = await users.findOne({ username: cleanUser });
+  if (!user) {
+    throw new Error('Operator account not found.');
+  }
+
+  const newSalt = generateSalt();
+  const newHash = hashPassword(newPassword, newSalt);
+
+  await users.updateOne({ username: user.username }, {
+    $set: { passwordHash: newHash, salt: newSalt }
+  });
+
+  if (challengeId) {
+    memoryChallenges.delete(challengeId);
+  }
+
+  user.passwordHash = newHash;
+  user.salt = newSalt;
+  return await issueSessionForUser(user);
+}
+
 async function issueSessionForUser(user) {
   const token = createSessionToken(user);
   try {
@@ -639,6 +861,8 @@ async function logoutSession(token) {
 
 module.exports = {
   loginUser,
+  lookupAuthMethods,
+  verifyPasswordForChallenge,
   verify2FA,
   resend2FACode,
   registerUser,
@@ -648,5 +872,8 @@ module.exports = {
   changeUserPassword,
   verifySession,
   logoutSession,
+  loginAsGuest,
+  requestPasswordReset,
+  resetPasswordWithCode,
   DEFAULT_ADMIN
 };

@@ -177,6 +177,53 @@ async function runTestSuite() {
   });
   assert(resSecKey.status === 200 && resSecKey.data.token, 'Verify Security Key PIN (7777)', 'Hardware PIN grants session token');
 
+  // New Step 1: Lookup enabled auth methods by username
+  const resLookup = await request('/api/auth/lookup-methods', {
+    method: 'POST',
+    body: { username: 'admin' }
+  });
+  assert(
+    resLookup.status === 200 &&
+    resLookup.data.success &&
+    Array.isArray(resLookup.data.methods) &&
+    resLookup.data.methods.includes('password'),
+    'Step 1 Username Lookup & Enabled Methods',
+    `Enabled methods: ${resLookup.data.methods.join(', ')}`
+  );
+
+  // New Step 2: Verify password against challenge
+  const resVerifyPass = await request('/api/auth/verify-password', {
+    method: 'POST',
+    body: {
+      challengeId: resLookup.data.challengeId,
+      username: 'admin',
+      password: 'password123'
+    }
+  });
+  assert(resVerifyPass.status === 200 && resVerifyPass.data.token, 'Step 2 Password Verification (/api/auth/verify-password)', 'Grants session token');
+
+  // Instant Guest Login
+  const resGuest = await request('/api/auth/guest', { method: 'POST' });
+  assert(resGuest.status === 200 && resGuest.data.token && resGuest.data.user.role === 'guest', 'Guest Account Instant Login (/api/auth/guest)', `Role: ${resGuest.data.user.role}`);
+
+  // Forgot Password Request & Reset
+  const resForgot = await request('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { username: 'admin' }
+  });
+  assert(resForgot.status === 200 && resForgot.data.demoResetCode, 'Forgot Password Request (/api/auth/forgot-password)', `Dispatched code: ${resForgot.data.demoResetCode}`);
+
+  const resReset = await request('/api/auth/reset-password', {
+    method: 'POST',
+    body: {
+      username: 'admin',
+      challengeId: resForgot.data.challengeId,
+      code: resForgot.data.demoResetCode,
+      newPassword: 'password123'
+    }
+  });
+  assert(resReset.status === 200 && resReset.data.token, 'Reset Password with Code (/api/auth/reset-password)', 'Successfully reset & authorized session');
+
   // -------------------------------------------------------------------------
   // TEST GROUP 4: SESSION VERIFICATION & OPERATOR PROFILE
   // -------------------------------------------------------------------------

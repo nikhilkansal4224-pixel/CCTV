@@ -30,6 +30,8 @@ class ArgusAuth {
     // Step Views
     this.viewCredentials = document.getElementById('viewCredentials');
     this.view2FAMethods = document.getElementById('view2FAMethods');
+    this.viewVerifyPassword = document.getElementById('viewVerifyPassword');
+    this.viewForgotPassword = document.getElementById('viewForgotPassword');
     this.view2FAPasskey = document.getElementById('view2FAPasskey');
     this.view2FAEmailPin = document.getElementById('view2FAEmailPin');
     this.view2FASecurityKey = document.getElementById('view2FASecurityKey');
@@ -44,14 +46,40 @@ class ArgusAuth {
     this.btnTogglePass = document.getElementById('btnTogglePassword');
     this.loginError = document.getElementById('loginErrorBanner');
     this.btnSubmitLogin = document.getElementById('btnSubmitLogin');
+    this.btnGuestLogin = document.getElementById('btnGuestLogin');
 
-    // Step 2: 2FA Selection Elements
+    // Step 2: Verification Selection Elements
     this.twoFaUsername = document.getElementById('twoFaUsernameDisplay');
-    this.btnSelectPasskey = document.getElementById('btnSelectPasskey');
+    this.btnChangeOperator = document.getElementById('btnChangeOperator');
+    this.authMethodsList = document.getElementById('authMethodsList');
+    this.btnSelectPassword = document.getElementById('btnSelectPassword');
     this.btnSelectEmailPin = document.getElementById('btnSelectEmailPin');
+    this.btnSelectPasskey = document.getElementById('btnSelectPasskey');
     this.btnSelectSecurityKey = document.getElementById('btnSelectSecurityKey');
     this.btnQuick2FAProceed = document.getElementById('btnQuick2FAProceed');
+    this.btnGoToForgotPassword = document.getElementById('btnGoToForgotPassword');
     this.btn2FACancel = document.getElementById('btn2FACancel');
+
+    // Step 2-Pass: Password Verification Elements
+    this.formVerifyPassword = document.getElementById('formVerifyPassword');
+    this.verifyPasswordInput = document.getElementById('verifyPasswordInput');
+    this.btnToggleVerifyPassword = document.getElementById('btnToggleVerifyPassword');
+    this.verifyPasswordError = document.getElementById('verifyPasswordErrorBanner');
+    this.verifyPassUsernameDisplay = document.getElementById('verifyPassUsernameDisplay');
+    this.btnSubmitVerifyPassword = document.getElementById('btnSubmitVerifyPassword');
+
+    // Step Forgot Password Elements
+    this.formForgotPassword = document.getElementById('formForgotPassword');
+    this.forgotPassMaskedEmail = document.getElementById('forgotPassMaskedEmail');
+    this.inputResetCode = document.getElementById('inputResetCode');
+    this.inputResetNewPassword = document.getElementById('inputResetNewPassword');
+    this.inputResetConfirmPassword = document.getElementById('inputResetConfirmPassword');
+    this.resetPasswordError = document.getElementById('resetPasswordErrorBanner');
+    this.resetDemoPill = document.getElementById('resetDemoPill');
+    this.resetDemoCode = document.getElementById('resetDemoCode');
+    this.btnResendResetCode = document.getElementById('btnResendResetCode');
+    this.btnSubmitResetPassword = document.getElementById('btnSubmitResetPassword');
+    this.currentResetCode = null;
 
     // Step 2A: Passkey Elements
     this.btnVerifyPasskey = document.getElementById('btnVerifyPasskey');
@@ -212,11 +240,20 @@ class ArgusAuth {
       });
     }
 
-    // Step 1: Submit ID and Password
+    // Step 1: Submit Username
     if (this.formLogin) {
       this.formLogin.addEventListener('submit', (e) => {
         e.preventDefault();
         this.submitCredentialsLogin();
+      });
+    }
+
+    // Step 1: Guest Account Button
+    if (this.btnGuestLogin) {
+      this.btnGuestLogin.addEventListener('click', (e) => {
+        if (e) e.preventDefault();
+        this.playKeyClick();
+        this.submitGuestLogin();
       });
     }
 
@@ -320,7 +357,21 @@ class ArgusAuth {
       });
     }
 
-    // 2FA Method Selection Buttons
+    // Verification Method Selection Buttons
+    if (this.btnSelectPassword) {
+      this.btnSelectPassword.addEventListener('click', () => {
+        this.playKeyClick();
+        this.showView('verify_password');
+        if (this.verifyPassUsernameDisplay && this.currentChallenge) {
+          this.verifyPassUsernameDisplay.textContent = this.currentChallenge.username;
+        }
+        if (this.verifyPasswordInput) {
+          this.verifyPasswordInput.value = '';
+          this.verifyPasswordInput.focus();
+        }
+      });
+    }
+
     if (this.btnSelectPasskey) {
       this.btnSelectPasskey.addEventListener('click', () => {
         this.playKeyClick();
@@ -351,6 +402,56 @@ class ArgusAuth {
       });
     }
 
+    // Password Verification form submit & toggle
+    if (this.formVerifyPassword) {
+      this.formVerifyPassword.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.executePasswordVerification();
+      });
+    }
+
+    if (this.btnToggleVerifyPassword && this.verifyPasswordInput) {
+      this.btnToggleVerifyPassword.addEventListener('click', () => {
+        const isPass = this.verifyPasswordInput.type === 'password';
+        this.verifyPasswordInput.type = isPass ? 'text' : 'password';
+        this.btnToggleVerifyPassword.textContent = isPass ? '🔒' : '👁️';
+      });
+    }
+
+    // Forgot Password triggers
+    const triggerForgot = () => {
+      this.playKeyClick();
+      this.openForgotPasswordView();
+    };
+    if (this.btnGoToForgotPassword) {
+      this.btnGoToForgotPassword.addEventListener('click', triggerForgot);
+    }
+    document.querySelectorAll('.btn-trigger-forgot-pass').forEach(btn => {
+      btn.addEventListener('click', triggerForgot);
+    });
+
+    // Forgot Password Form Submit & Resend Code
+    if (this.formForgotPassword) {
+      this.formForgotPassword.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.submitPasswordReset();
+      });
+    }
+
+    if (this.btnResendResetCode) {
+      this.btnResendResetCode.addEventListener('click', () => {
+        this.resendResetCode();
+      });
+    }
+
+    if (this.resetDemoPill) {
+      this.resetDemoPill.addEventListener('click', () => {
+        if (this.currentResetCode && this.inputResetCode) {
+          this.inputResetCode.value = this.currentResetCode;
+        }
+      });
+    }
+
     // Back to 2FA Method Selection buttons
     document.querySelectorAll('.btn-back-to-2fa-methods').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -358,6 +459,15 @@ class ArgusAuth {
         this.showView('2fa_methods');
       });
     });
+
+    // Change operator button
+    if (this.btnChangeOperator) {
+      this.btnChangeOperator.addEventListener('click', () => {
+        this.playKeyClick();
+        this.currentChallenge = null;
+        this.showView('credentials');
+      });
+    }
 
     // Cancel 2FA & Return to Login
     if (this.btn2FACancel) {
@@ -558,6 +668,8 @@ class ArgusAuth {
     const views = [
       this.viewCredentials,
       this.view2FAMethods,
+      this.viewVerifyPassword,
+      this.viewForgotPassword,
       this.view2FAPasskey,
       this.view2FAEmailPin,
       this.view2FASecurityKey,
@@ -574,6 +686,14 @@ class ArgusAuth {
         break;
       case '2fa_methods':
         if (this.view2FAMethods) this.view2FAMethods.classList.add('active');
+        break;
+      case 'verify_password':
+        if (this.viewVerifyPassword) this.viewVerifyPassword.classList.add('active');
+        if (this.verifyPasswordInput) this.verifyPasswordInput.focus();
+        break;
+      case 'forgot_password':
+        if (this.viewForgotPassword) this.viewForgotPassword.classList.add('active');
+        if (this.inputResetCode) this.inputResetCode.focus();
         break;
       case '2fa_passkey':
         if (this.view2FAPasskey) this.view2FAPasskey.classList.add('active');
@@ -597,6 +717,8 @@ class ArgusAuth {
   clearErrors() {
     [
       this.loginError,
+      this.verifyPasswordError,
+      this.resetPasswordError,
       this.passkeyError,
       this.emailError,
       this.securityKeyError,
@@ -718,13 +840,46 @@ class ArgusAuth {
     }
   }
 
-  // STEP 1: Submit Username and Password
+  // STEP 1: Submit Username and Transport to Verification Method Selection
   async submitCredentialsLogin() {
     const username = this.inputUserId ? this.inputUserId.value.trim() : '';
     const password = this.inputPassword ? this.inputPassword.value : '';
 
-    if (!username || !password) {
-      this.showError(this.loginError, 'Please enter Operator ID and Password.');
+    // If both username and password are provided (e.g. programmatic tests or quick demo)
+    if (username && password) {
+      this.setBtnLoading(this.btnSubmitLogin, true);
+      this.clearErrors();
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Access Denied: Invalid Operator ID or Password.');
+        }
+        if (data.requires2FA) {
+          this.playRadarScan();
+          this.currentChallenge = data;
+          if (this.twoFaUsername) this.twoFaUsername.textContent = data.username;
+          if (this.twoFaMaskedEmail) this.twoFaMaskedEmail.textContent = data.maskedEmail;
+          if (this.emailDemoCode) this.emailDemoCode.textContent = data.demoEmailCode;
+          this.showView('2fa_methods');
+          return;
+        }
+        this.onAuthSuccess(data);
+        return;
+      } catch (err) {
+        this.showError(this.loginError, err.message);
+        return;
+      } finally {
+        this.setBtnLoading(this.btnSubmitLogin, false);
+      }
+    }
+
+    if (!username) {
+      this.showError(this.loginError, 'Please enter Operator ID / Username.');
       return;
     }
 
@@ -732,43 +887,227 @@ class ArgusAuth {
     this.clearErrors();
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/lookup-methods', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username })
       });
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Access Denied: Invalid Operator ID or Password.');
+        throw new Error(data.error || `Operator ID '${username}' not recognized.`);
       }
 
-      // Check if transferred to 2-Step Authentication options
-      if (data.requires2FA) {
-        this.playRadarScan();
-        this.currentChallenge = data;
+      this.currentChallenge = data;
+      this.playRadarScan();
 
-        if (this.twoFaUsername) {
-          this.twoFaUsername.textContent = data.username;
-        }
-        if (this.twoFaMaskedEmail) {
-          this.twoFaMaskedEmail.textContent = data.maskedEmail;
-        }
-        if (this.emailDemoCode) {
-          this.emailDemoCode.textContent = data.demoEmailCode;
-        }
-
-        // Transfer to Step 2: 2-Step Verification Options Page
-        this.showView('2fa_methods');
-        return;
+      if (this.twoFaUsername) {
+        this.twoFaUsername.textContent = data.username;
+      }
+      if (this.twoFaMaskedEmail) {
+        this.twoFaMaskedEmail.textContent = data.maskedEmail;
+      }
+      if (this.emailDemoCode) {
+        this.emailDemoCode.textContent = data.demoEmailCode;
+      }
+      if (this.forgotPassMaskedEmail) {
+        this.forgotPassMaskedEmail.textContent = data.maskedEmail;
       }
 
-      // Direct login if 2FA was disabled
-      this.onAuthSuccess(data);
+      // Filter verification methods so ONLY the options this user has enabled are visible!
+      const methods = Array.isArray(data.methods) ? data.methods : ['password', 'email_pin', 'passkey', 'security_key'];
+      
+      if (this.btnSelectPassword) {
+        this.btnSelectPassword.style.display = methods.includes('password') ? 'flex' : 'none';
+      }
+      if (this.btnSelectEmailPin) {
+        this.btnSelectEmailPin.style.display = methods.includes('email_pin') ? 'flex' : 'none';
+      }
+      if (this.btnSelectPasskey) {
+        this.btnSelectPasskey.style.display = methods.includes('passkey') ? 'flex' : 'none';
+      }
+      if (this.btnSelectSecurityKey) {
+        this.btnSelectSecurityKey.style.display = methods.includes('security_key') ? 'flex' : 'none';
+      }
+
+      // Transport to Step 2: Verification Selection
+      this.showView('2fa_methods');
     } catch (err) {
       this.showError(this.loginError, err.message);
     } finally {
       this.setBtnLoading(this.btnSubmitLogin, false);
+    }
+  }
+
+  // Instant Guest Access
+  async submitGuestLogin() {
+    this.playRadarScan();
+    this.clearErrors();
+    if (this.btnGuestLogin) this.setBtnLoading(this.btnGuestLogin, true);
+
+    try {
+      const res = await fetch('/api/auth/guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to initialize Guest session.');
+      }
+      this.onAuthSuccess(data);
+    } catch (err) {
+      this.showError(this.loginError, err.message);
+    } finally {
+      if (this.btnGuestLogin) this.setBtnLoading(this.btnGuestLogin, false);
+    }
+  }
+
+  // Step 2-Pass: Execute Password Verification
+  async executePasswordVerification() {
+    const password = this.verifyPasswordInput ? this.verifyPasswordInput.value : '';
+    if (!password) {
+      this.showError(this.verifyPasswordError, 'Please enter your Security Password.');
+      return;
+    }
+
+    if (!this.currentChallenge) {
+      this.showView('credentials');
+      return;
+    }
+
+    this.setBtnLoading(this.btnSubmitVerifyPassword, true);
+    this.clearErrors();
+
+    try {
+      const res = await fetch('/api/auth/verify-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeId: this.currentChallenge.challengeId,
+          username: this.currentChallenge.username,
+          password
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Security password rejected.');
+      }
+
+      this.onAuthSuccess(data);
+    } catch (err) {
+      this.showError(this.verifyPasswordError, err.message);
+    } finally {
+      this.setBtnLoading(this.btnSubmitVerifyPassword, false);
+    }
+  }
+
+  // Forgot Password: Request PIN & Open View
+  async openForgotPasswordView() {
+    this.clearErrors();
+    const username = (this.currentChallenge && this.currentChallenge.username) || (this.inputUserId && this.inputUserId.value.trim()) || 'admin';
+    
+    this.showView('forgot_password');
+    if (this.forgotPassMaskedEmail && this.currentChallenge) {
+      this.forgotPassMaskedEmail.textContent = this.currentChallenge.maskedEmail;
+    }
+
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          challengeId: this.currentChallenge?.challengeId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.currentResetCode = data.demoResetCode;
+        if (this.resetDemoCode) this.resetDemoCode.textContent = data.demoResetCode;
+        if (this.forgotPassMaskedEmail) this.forgotPassMaskedEmail.textContent = data.maskedEmail;
+        if (this.currentChallenge) {
+          this.currentChallenge.challengeId = data.challengeId || this.currentChallenge.challengeId;
+        } else {
+          this.currentChallenge = data;
+        }
+      }
+    } catch (e) {}
+
+    if (this.inputResetCode) {
+      this.inputResetCode.value = this.currentResetCode || '';
+      this.inputResetCode.focus();
+    }
+  }
+
+  async resendResetCode() {
+    this.clearErrors();
+    const username = (this.currentChallenge && this.currentChallenge.username) || (this.inputUserId && this.inputUserId.value.trim());
+    if (!username) return;
+
+    this.setBtnLoading(this.btnResendResetCode, true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          challengeId: this.currentChallenge?.challengeId
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to resend code');
+      this.currentResetCode = data.demoResetCode;
+      if (this.resetDemoCode) this.resetDemoCode.textContent = data.demoResetCode;
+      this.playRadarScan();
+    } catch (err) {
+      this.showError(this.resetPasswordError, err.message);
+    } finally {
+      this.setBtnLoading(this.btnResendResetCode, false);
+    }
+  }
+
+  async submitPasswordReset() {
+    const code = this.inputResetCode ? this.inputResetCode.value.trim() : '';
+    const newPassword = this.inputResetNewPassword ? this.inputResetNewPassword.value : '';
+    const confirmPassword = this.inputResetConfirmPassword ? this.inputResetConfirmPassword.value : '';
+
+    if (!code) {
+      this.showError(this.resetPasswordError, 'Please enter the 6-digit verification code.');
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      this.showError(this.resetPasswordError, 'New password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      this.showError(this.resetPasswordError, 'Passwords do not match.');
+      return;
+    }
+
+    this.setBtnLoading(this.btnSubmitResetPassword, true);
+    this.clearErrors();
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeId: this.currentChallenge?.challengeId,
+          username: this.currentChallenge?.username || this.inputUserId?.value?.trim(),
+          code,
+          newPassword
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Password reset failed.');
+      }
+
+      this.onAuthSuccess(data);
+    } catch (err) {
+      this.showError(this.resetPasswordError, err.message);
+    } finally {
+      this.setBtnLoading(this.btnSubmitResetPassword, false);
     }
   }
 

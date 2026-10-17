@@ -5,7 +5,24 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const { MongoClient } = require('mongodb');
-const { loginUser, verify2FA, resend2FACode, registerUser, authenticateWithGoogle, getUserProfile, updateUserProfile, changeUserPassword, verifySession, logoutSession, DEFAULT_ADMIN } = require('./api/_auth');
+const {
+  loginUser,
+  lookupAuthMethods,
+  verifyPasswordForChallenge,
+  verify2FA,
+  resend2FACode,
+  registerUser,
+  authenticateWithGoogle,
+  getUserProfile,
+  updateUserProfile,
+  changeUserPassword,
+  verifySession,
+  logoutSession,
+  loginAsGuest,
+  requestPasswordReset,
+  resetPasswordWithCode,
+  DEFAULT_ADMIN
+} = require('./api/_auth');
 
 let localtunnel = null;
 try {
@@ -209,6 +226,75 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ success: true, ...result }));
     } catch (err) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Lookup Available Verification Methods for Username
+  if ((pathname === '/api/auth/lookup-methods' || pathname === '/api/auth/methods') && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await lookupAuthMethods(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Verify Password against Challenge
+  if (pathname === '/api/auth/verify-password' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await verifyPasswordForChallenge(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Instant Guest Login
+  if (pathname === '/api/auth/guest' && req.method === 'POST') {
+    try {
+      const result = await loginAsGuest();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Request Password Reset Code
+  if (pathname === '/api/auth/forgot-password' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await requestPasswordReset(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // API Auth: Reset Password with Code
+  if (pathname === '/api/auth/reset-password' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const result = await resetPasswordWithCode(data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: err.message }));
     }
     return;

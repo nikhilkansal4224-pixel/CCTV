@@ -1,6 +1,8 @@
 require('./_env');
 const {
   loginUser,
+  lookupAuthMethods,
+  verifyPasswordForChallenge,
   verify2FA,
   resend2FACode,
   registerUser,
@@ -9,7 +11,10 @@ const {
   updateUserProfile,
   changeUserPassword,
   verifySession,
-  logoutSession
+  logoutSession,
+  loginAsGuest,
+  requestPasswordReset,
+  resetPasswordWithCode
 } = require('./_auth');
 
 function parseBody(req) {
@@ -60,7 +65,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(result);
     }
 
-    // 3. User Login
+    // 3. User Login (Standard unified login)
     if (action === 'login') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
       const body = parseBody(req);
@@ -68,7 +73,46 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, ...result });
     }
 
-    // 4. Verify 2FA
+    // 4. Lookup Enabled Auth Methods for Username
+    if (action === 'lookup-methods' || action === 'methods') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+      const body = parseBody(req);
+      const result = await lookupAuthMethods(body);
+      return res.status(200).json(result);
+    }
+
+    // 5. Verify Password in Method Selection
+    if (action === 'verify-password') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+      const body = parseBody(req);
+      const result = await verifyPasswordForChallenge(body);
+      return res.status(200).json(result);
+    }
+
+    // 6. Guest Login
+    if (action === 'guest') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+      const result = await loginAsGuest();
+      return res.status(200).json(result);
+    }
+
+    // 7. Forgot Password (Dispatch reset PIN)
+    if (action === 'forgot-password') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+      const body = parseBody(req);
+      const result = await requestPasswordReset(body);
+      return res.status(200).json(result);
+    }
+
+    // 8. Reset Password with PIN
+    if (action === 'reset-password') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+      const body = parseBody(req);
+      const result = await resetPasswordWithCode(body);
+      return res.status(200).json(result);
+    }
+
+    // 9. Verify 2FA
     if (action === 'verify-2fa') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
       const body = parseBody(req);
@@ -76,7 +120,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(result);
     }
 
-    // 5. Resend 2FA Code
+    // 10. Resend 2FA Code
     if (action === 'resend-code') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
       const body = parseBody(req);
@@ -84,7 +128,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(result);
     }
 
-    // 6. Register New Operator
+    // 11. Register New Operator
     if (action === 'register') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
       const body = parseBody(req);
@@ -92,7 +136,7 @@ module.exports = async function handler(req, res) {
       return res.status(201).json({ success: true, ...result });
     }
 
-    // 7. Verify Session (Who am I?)
+    // 12. Verify Session (Who am I?)
     if (action === 'me') {
       if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
       const user = await verifySession(token);
@@ -102,7 +146,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ authenticated: true, user });
     }
 
-    // 8. Operator Profile (GET & PUT)
+    // 13. Operator Profile (GET & PUT)
     if (action === 'profile') {
       if (!token) {
         return res.status(401).json({ success: false, error: 'Unauthorized: Session token required.' });
@@ -119,7 +163,7 @@ module.exports = async function handler(req, res) {
       return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // 9. Change Password
+    // 14. Change Password
     if (action === 'change-password') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
       const body = parseBody(req);
@@ -127,7 +171,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(result);
     }
 
-    // 10. Logout Session
+    // 15. Logout Session
     if (action === 'logout') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
       await logoutSession(token);
