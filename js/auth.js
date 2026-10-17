@@ -130,15 +130,20 @@ class ArgusAuth {
     this.btnGoogleRegister = document.getElementById('btnGoogleRegister');
     this.googleFallbackModal = document.getElementById('googleFallbackModal');
     this.btnCloseGoogleFallback = document.getElementById('btnCloseGoogleFallback');
+    this.btnLaunchGooglePageDirect = document.getElementById('btnLaunchGooglePageDirect');
     this.formCustomGoogle = document.getElementById('formCustomGoogleLogin');
     this.customGoogleEmail = document.getElementById('customGoogleEmail');
     this.customGoogleName = document.getElementById('customGoogleName');
     this.googleClientId = null;
+    this.googleTokenClient = null;
 
     this.init();
   }
 
   init() {
+    if (this.checkGoogleOAuthRedirect()) {
+      return;
+    }
     this.bindEvents();
     this.checkInitialSession();
     this.initGoogleAuth();
@@ -1296,9 +1301,46 @@ class ArgusAuth {
   }
 
   // =========================================================================
-  // GOOGLE IDENTITY SERVICES & FAST LOGIN / SIGNUP
+  // GOOGLE IDENTITY SERVICES & AUTHENTICATION
   // =========================================================================
+  checkGoogleOAuthRedirect() {
+    const hash = window.location.hash;
+    if (hash && (hash.includes('access_token=') || hash.includes('id_token='))) {
+      const params = new URLSearchParams(hash.substring(1));
+      const accessToken = params.get('access_token');
+      const idToken = params.get('id_token');
+
+      if (window.opener) {
+        try {
+          window.opener.postMessage({
+            type: 'ARGUS_GOOGLE_AUTH_RESPONSE',
+            accessToken: accessToken,
+            idToken: idToken
+          }, '*');
+          window.close();
+          return true;
+        } catch (e) {
+          console.error('Error posting message to window.opener:', e);
+        }
+      } else {
+        try {
+          window.history.replaceState(null, '', window.location.pathname);
+        } catch (e) {}
+
+        if (accessToken) {
+          this.fetchGoogleProfileAndLogin(accessToken);
+          return true;
+        } else if (idToken) {
+          this.submitGoogleAuth({ credential: idToken });
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   async initGoogleAuth() {
+    // 1. Fetch Google Client ID from backend
     try {
       const res = await fetch('/api/auth/google-client-id');
       if (res.ok) {
@@ -1309,8 +1351,23 @@ class ArgusAuth {
       console.warn('Could not fetch Google Client ID:', e.message);
     }
 
-    const setupGsi = () => {
-      if (window.google?.accounts?.id && this.googleClientId) {
+    // 2. Listen for cross-window message from OAuth popup
+    window.addEventListener('message', async (event) => {
+      if (event.data && event.data.type === 'ARGUS_GOOGLE_AUTH_RESPONSE') {
+        if (event.data.accessToken) {
+          await this.fetchGoogleProfileAndLogin(event.data.accessToken);
+        } else if (event.data.idToken) {
+          await this.submitGoogleAuth({ credential: event.data.idToken });
+        }
+      }
+    });
+
+    // 3. Initialize Google Identity Services (GIS) & OAuth2 Clients
+    const setupGoogleClients = () => {
+      if (!this.googleClientId) return;
+
+      // Google Sign-In with ID Token (GIS)
+      if (window.google?.accounts?.id) {
         try {
           window.google.accounts.id.initialize({
             client_id: this.googleClientId,
@@ -1323,28 +1380,63 @@ class ArgusAuth {
             cancel_on_tap_outside: true
           });
         } catch (err) {
-          console.warn('Google Identity Services initialization warning:', err.message);
+          console.warn('Google GSI initialize notice:', err.message);
+        }
+      }
+
+      // Google OAuth2 Token Client (for custom button clicks to open Google Accounts)
+      if (window.google?.accounts?.oauth2) {
+        try {
+          this.googleTokenClient = window.google.accounts.oauth2.initTokenClient({
+            client_id: this.googleClientId,
+            scope: 'openid email profile',
+            prompt: 'select_account',
+            callback: async (tokenResponse) => {
+              if (tokenResponse.error) {
+                console.warn('Google Token Client response error:', tokenResponse);
+                this.openGoogleFallbackModal();
+                return;
+              }
+              if (tokenResponse.access_token) {
+                await this.fetchGoogleProfileAndLogin(tokenResponse.access_token);
+              }
+            }
+          });
+        } catch (err) {
+          console.warn('Google OAuth2 Token Client init notice:', err.message);
         }
       }
     };
 
-    if (window.google?.accounts?.id) {
-      setupGsi();
+    if (window.google?.accounts?.id || window.google?.accounts?.oauth2) {
+      setupGoogleClients();
     } else {
-      window.addEventListener('load', () => setupGsi());
+      window.addEventListener('load', () => {
+        setTimeout(setupGoogleClients, 120);
+      });
     }
 
+    // 4. Bind Button Listeners
     if (this.btnGoogleLogin) {
-      this.btnGoogleLogin.addEventListener('click', () => {
+      this.btnGoogleLogin.addEventListener('click', (e) => {
+        e.preventDefault();
         this.playKeyClick();
         this.triggerGoogleFlow();
       });
     }
 
     if (this.btnGoogleRegister) {
-      this.btnGoogleRegister.addEventListener('click', () => {
+      this.btnGoogleRegister.addEventListener('click', (e) => {
+        e.preventDefault();
         this.playKeyClick();
         this.triggerGoogleFlow();
+      });
+    }
+
+    if (this.btnLaunchGooglePageDirect) {
+      this.btnLaunchGooglePageDirect.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.openGoogleAuthPopup(true);
       });
     }
 
@@ -1362,6 +1454,7 @@ class ArgusAuth {
       });
     }
 
+    // Fallback account selection cards
     document.querySelectorAll('.btn-choose-google').forEach(btn => {
       btn.addEventListener('click', () => {
         const email = btn.dataset.email;
@@ -1383,27 +1476,88 @@ class ArgusAuth {
   }
 
   triggerGoogleFlow() {
-    let promptInitiated = false;
-    if (window.google?.accounts?.id && this.googleClientId) {
+    this.playRadarScan();
+
+    // 1. Try Google GIS OAuth2 Token Client (opens official accounts.google.com popup)
+    if (this.googleTokenClient) {
       try {
-        window.google.accounts.id.prompt((notification) => {
-          promptInitiated = true;
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            this.openGoogleFallbackModal();
-          }
-        });
-      } catch (e) {
-        this.openGoogleFallbackModal();
+        this.googleTokenClient.requestAccessToken({ prompt: 'select_account' });
         return;
+      } catch (e) {
+        console.warn('Google token client error, falling back to direct popup:', e.message);
       }
     }
 
-    // Safety timeout: If One Tap is unavailable or blocked by browser origin policy, open modal
-    setTimeout(() => {
-      if (!promptInitiated && (!this.currentUser || this.isLocked)) {
-        this.openGoogleFallbackModal();
+    // 2. Open genuine Google Accounts OAuth2 popup window
+    if (this.googleClientId) {
+      const popup = this.openGoogleAuthPopup();
+      if (popup) return;
+    }
+
+    // 3. Fallback to Google Access Gateway Chooser if popup blocked
+    this.openGoogleFallbackModal();
+  }
+
+  openGoogleAuthPopup(forceFocus = true) {
+    if (!this.googleClientId) return null;
+
+    const redirectUri = window.location.origin + '/';
+    const state = Math.random().toString(36).substring(2);
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${encodeURIComponent(this.googleClientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=token` +
+      `&scope=${encodeURIComponent('openid email profile')}` +
+      `&state=${state}` +
+      `&prompt=select_account`;
+
+    const width = 500;
+    const height = 620;
+    const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
+    const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
+
+    try {
+      const popup = window.open(
+        googleAuthUrl,
+        'ArgusGoogleSignIn',
+        `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no`
+      );
+
+      if (popup && forceFocus) {
+        popup.focus();
       }
-    }, 700);
+      return popup;
+    } catch (e) {
+      console.warn('Popup window blocked:', e.message);
+      return null;
+    }
+  }
+
+  async fetchGoogleProfileAndLogin(accessToken) {
+    this.playRadarScan();
+    try {
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!res.ok) {
+        throw new Error('Failed to retrieve user profile from Google.');
+      }
+      const profile = await res.json();
+      await this.submitGoogleAuth({
+        email: profile.email,
+        name: profile.name,
+        picture: profile.picture,
+        sub: profile.sub
+      });
+    } catch (err) {
+      this.playErrorBuzzer();
+      console.error('Google profile fetch error:', err);
+      if (this.loginError) {
+        this.loginError.textContent = err.message;
+        this.loginError.classList.add('visible');
+      }
+      this.openGoogleFallbackModal();
+    }
   }
 
   openGoogleFallbackModal() {

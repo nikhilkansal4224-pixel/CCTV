@@ -2611,3 +2611,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .auth-divider-line:not(:empty)::after {
   margin-left: 0.85em;
 }
+
+.google-btn-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 0.4rem;
+}
+
+.google-btn-container > div {
+  width: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
+}
+
+.google-btn-container iframe {
+  margin: 0 auto !important;
+}
