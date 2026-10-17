@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AETHER CCTV • Surrealist Multi-Camera Surveillance Hub</title>
+  
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/surrealism.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+
+  <!-- Core Libraries: Socket.IO, QR Code, TensorFlow.js & COCO-SSD -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+</head>
+<body>
+
+  <!-- Surrealism Dynamic Canvas & Atmospheric Glow Background -->
+  <canvas id="surreal-canvas"></canvas>
+  <div class="surreal-glow-orb surreal-orb-1"></div>
+  <div class="surreal-glow-orb surreal-orb-2"></div>
+  <div class="surreal-glow-orb surreal-orb-3"></div>
+  <div class="surreal-mesh-grid"></div>
+
+  <!-- Command Center Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-logo-gem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M2 12c2.5-5 6.5-8 10-8s7.5 3 10 8c-2.5 5-6.5 8-10 8s-7.5-3-10-8z"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">AETHER • OMNISCIENT CCTV</h1>
+        <div class="brand-subtitle">SURREALIST MULTI-CAMERA NEURAL SURVEILLANCE MATRIX</div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="status-badge">
+        <span class="status-indicator-dot" id="system-threat-indicator"></span>
+        <span id="system-status-text">SURVEILLANCE SECURE</span>
+      </div>
+
+      <button class="btn-primary" id="btn-add-webcam">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span>Add Laptop Cam</span>
+      </button>
+
+      <button class="btn-primary" id="btn-add-sim">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        <span>Add Simulation Feed</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Bento Grid Main Surveillance Deck -->
+  <main class="bento-container">
+
+    <!-- BENTO 1: Hero Primary Surveillance Viewport (8 Columns x 2 Rows) -->
+    <section class="glass-panel bento-hero">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              <polyline points="21 7 12 16 8 12"/>
+            </svg>
+          </div>
+          <span class="card-title">Primary Surveillance Viewport</span>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <span class="card-badge" id="hero-cam-type">LIVE PRIMARY</span>
+          <button class="filter-btn" id="btn-snapshot-hero" title="Capture Snapshot">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            Snapshot
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body" style="padding: 14px 20px;">
+        <div class="surveillance-viewport-wrapper" id="surveillance-viewport">
+          <!-- Video Source -->
+          <video id="hero-video" class="hero-video-feed" autoplay playsinline muted></video>
+          <!-- Canvas Frame Source (For mobile frame fallback or simulation) -->
+          <canvas id="hero-canvas" class="hero-canvas-feed" style="display: none;"></canvas>
+          <!-- AI Human Movement Bounding Boxes & HUD overlay -->
+          <canvas id="hero-detection-overlay" class="hero-detection-overlay"></canvas>
+
+          <!-- Surveillance Overlays -->
+          <div class="hud-scan-line"></div>
+          <div class="hud-crosshair-center"></div>
+
+          <!-- Top Viewport Information Bar -->
+          <div class="viewport-info-bar">
+            <div class="viewport-cam-label">
+              <span class="rec-pulse-dot"></span>
+              <span id="hero-cam-title">CONNECTING FEED...</span>
+            </div>
+            <div class="viewport-cam-label">
+              <span style="color: var(--neon-cyan);">AI HUMAN TRACKING</span>
+              <span style="color: rgba(255,255,255,0.3);">|</span>
+              <span id="ai-model-badge">COCO-SSD MobileNet</span>
+            </div>
+          </div>
+
+          <!-- Bottom Viewport Filter Controls -->
+          <div class="viewport-controls-bar">
+            <div class="filter-pills-group">
+              <button class="filter-btn active" data-filter="normal">Normal</button>
+              <button class="filter-btn" data-filter="night">Night Vision</button>
+              <button class="filter-btn" data-filter="thermal">Thermal IR</button>
+              <button class="filter-btn" data-filter="surreal">Surrealist Tint</button>
+            </div>
+            <div class="viewport-cam-label" style="font-size: 11px;">
+              <span>TARGETING: AUTO</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENTO 2: Dynamic QR Code Mobile Connect Hub (4 Columns) -->
+    <section class="glass-panel bento-qr">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+          </div>
+          <span class="card-title">Pair Mobile Camera</span>
+        </div>
+        <span class="card-badge">QR CONNECT</span>
+      </div>
+
+      <div class="card-body">
+        <div class="qr-content-wrapper">
+          <div class="qr-code-box" id="qr-code-box">
+            <!-- Dynamic QR Code will render here -->
+          </div>
+          <div class="qr-details">
+            <p class="qr-hint">
+              Scan this QR code with any smartphone camera on your Wi-Fi to transform it into an AI CCTV sensor node.
+            </p>
+            <div class="url-copy-box">
+              <span class="url-text" id="camera-stream-url">Detecting local URL...</span>
+              <button class="btn-icon-copy" id="btn-copy-url" title="Copy URL">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENTO 3: AI Threat & Human Movement Telemetry Matrix (4 Columns) -->
+    <section class="glass-panel bento-telemetry">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <span class="card-title">Human Movement Matrix</span>
+        </div>
+        <span class="card-badge" id="camera-count-badge">0 ACTIVE</span>
+      </div>
+
+      <div class="card-body">
+        <div class="telemetry-grid">
+          <div class="metric-card">
+            <span class="metric-label">Humans Detected</span>
+            <div class="metric-val-row">
+              <span class="metric-val" id="val-human-count">0</span>
+              <span class="metric-unit">subjects</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <span class="metric-label">Movement Velocity</span>
+            <div class="metric-val-row">
+              <span class="metric-val" id="val-movement-speed">0</span>
+              <span class="metric-unit">px / sec</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <span class="metric-label">Active Sensors</span>
+            <div class="metric-val-row">
+              <span class="metric-val" id="val-active-cameras">0</span>
+              <span class="metric-unit">nodes</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <span class="metric-label">Perimeter State</span>
+            <div class="metric-val-row">
+              <span class="metric-val" id="val-threat-state" style="font-size: 16px; color: var(--neon-emerald);">SECURE</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENTO 4: Multi-Camera Sensor Dock Carousel (12 Columns) -->
+    <section class="glass-panel bento-cameras">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+          </div>
+          <span class="card-title">Connected Optical Nodes & Camera Grid</span>
+        </div>
+        <span class="card-badge">CLICK THUMBNAIL TO SWITCH HERO</span>
+      </div>
+
+      <div class="card-body">
+        <div class="camera-cards-grid" id="camera-cards-grid">
+          <!-- Dynamic camera thumbnails are rendered here -->
+        </div>
+      </div>
+    </section>
+
+    <!-- BENTO 5: Incident Timeline & Snapshot Reel (7 Columns) -->
+    <section class="glass-panel bento-incidents">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <span class="card-title">Incident Reel & Human Detection Log</span>
+        </div>
+        <span class="card-badge" id="incident-count-badge">0 INCIDENTS</span>
+      </div>
+
+      <div class="card-body">
+        <div class="incident-list" id="incident-list">
+          <div style="color: #64748b; font-size: 13px; text-align: center; padding: 28px;">
+            Awaiting optical movement triggers...
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENTO 6: Sensor Control & AI Tuning Deck (5 Columns) -->
+    <section class="glass-panel bento-controls">
+      <div class="card-header">
+        <div class="card-title-group">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="4" y1="21" x2="4" y2="14"/>
+              <line x1="4" y1="10" x2="4" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12" y2="3"/>
+              <line x1="20" y1="21" x2="20" y2="16"/>
+              <line x1="20" y1="12" x2="20" y2="3"/>
+              <line x1="1" y1="14" x2="7" y2="14"/>
+              <line x1="9" y1="8" x2="15" y2="8"/>
+              <line x1="17" y1="16" x2="23" y2="16"/>
+            </svg>
+          </div>
+          <span class="card-title">Surveillance Control Deck</span>
+        </div>
+        <span class="card-badge">AI TUNING</span>
+      </div>
+
+      <div class="card-body">
+        <div class="controls-deck-grid">
+          <div class="control-row">
+            <div class="control-label-group">
+              <span>Human Confidence Threshold</span>
+              <span id="label-val-confidence" style="font-family: monospace; color: var(--neon-cyan);">55%</span>
+            </div>
+            <input type="range" class="slider-custom" id="slider-confidence" min="30" max="95" value="55">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label-group">
+              <span>Movement Sensitivity Displacement</span>
+              <span id="label-val-sensitivity" style="font-family: monospace; color: var(--neon-cyan);">15 px</span>
+            </div>
+            <input type="range" class="slider-custom" id="slider-sensitivity" min="5" max="50" value="15">
+          </div>
+
+          <div class="quick-action-btns">
+            <button class="btn-secondary active" id="btn-toggle-sound">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              </svg>
+              <span>Audio Siren (ON)</span>
+            </button>
+
+            <button class="btn-secondary" id="btn-clear-alerts">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              <span>Clear Incidents</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Application Logic Scripts -->
+  <script src="js/surrealism.js"></script>
+  <script src="js/detector.js"></script>
+  <script src="js/webrtc.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
