@@ -1501,11 +1501,16 @@ class ArgusAuth {
     // 3. Open genuine Google Accounts OAuth2 popup window
     if (this.googleClientId) {
       this.openGoogleAuthPopup();
+    } else {
+      this.showStatus('Notice: GOOGLE_CLIENT_ID not found in environment. Add GOOGLE_CLIENT_ID to your .env or use verified operators below.', 'info');
     }
   }
 
   openGoogleAuthPopup(forceFocus = true) {
-    if (!this.googleClientId) return null;
+    if (!this.googleClientId) {
+      this.showStatus('GOOGLE_CLIENT_ID is not configured in .env or server environment.', 'error');
+      return null;
+    }
 
     const redirectUri = window.location.origin;
     const state = Math.random().toString(36).substring(2);

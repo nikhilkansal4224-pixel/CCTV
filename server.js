@@ -10,31 +10,14 @@ const { loginUser, verify2FA, resend2FACode, registerUser, authenticateWithGoogl
 let localtunnel = null;
 try {
   localtunnel = require('localtunnel');
-} catch (e) {}
+} catch (e) { }
 
 // Auto-load .env configuration file if present
-try {
-  const envFile = path.join(__dirname, '.env');
-  if (fs.existsSync(envFile)) {
-    const lines = fs.readFileSync(envFile, 'utf8').split(/\r?\n/);
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx !== -1) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        const val = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
-        if (key && !process.env[key]) {
-          process.env[key] = val;
-        }
-      }
-    }
-  }
-} catch (e) {}
+require('./api/_env');
 
 const PORT = process.env.PORT || 3001;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017';
-const DB_NAME = 'cctv_surveillance';
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017';
+const DB_NAME = process.env.DB_NAME || 'cctv_surveillance';
 
 // MongoDB Client State
 let mongoClient = null;
@@ -277,7 +260,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/auth/google-client-id' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      clientId: process.env.GOOGLE_CLIENT_ID || '473264498286-5l7grtjn65fbm8jq57v141hefb185uum.apps.googleusercontent.com'
+      clientId: process.env.GOOGLE_CLIENT_ID || ''
     }));
     return;
   }
@@ -386,7 +369,7 @@ const server = http.createServer(async (req, res) => {
     if (mongoConnected && eventsCollection) {
       try {
         count = await eventsCollection.countDocuments();
-      } catch (e) {}
+      } catch (e) { }
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({

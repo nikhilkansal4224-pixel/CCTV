@@ -1,3 +1,4 @@
+require('./_env');
 const crypto = require('crypto');
 const { connectToDatabase } = require('./_db');
 
@@ -15,7 +16,8 @@ function generateSalt() {
 }
 
 function generateToken() {
-  return 'argus_sec_' + crypto.randomBytes(32).toString('hex');
+  const secret = process.env.SESSION_SECRET || 'argus_sec_';
+  return secret + crypto.randomBytes(32).toString('hex');
 }
 
 function maskEmail(email) {
@@ -25,19 +27,19 @@ function maskEmail(email) {
   return `${name[0]}${'*'.repeat(name.length - 2)}${name[name.length - 1]}@${domain}`;
 }
 
-// Default Sentinel Admin Operator with 2-Step Authentication enabled
+// Default Sentinel Admin Operator with 2-Step Authentication enabled (configurable via ENV)
 const DEFAULT_ADMIN = {
-  username: 'admin',
-  displayName: 'Lead Security Sentinel',
-  email: 'admin@argus-surveillance.net',
+  username: process.env.ADMIN_USERNAME || 'admin',
+  displayName: process.env.ADMIN_DISPLAY_NAME || 'Lead Security Sentinel',
+  email: process.env.ADMIN_EMAIL || 'admin@argus-surveillance.net',
   role: 'admin',
   clearance: 'Level 4 Sentinel Clearance',
-  pin: '7777', // Hardware Security Key PIN
+  pin: process.env.ADMIN_PIN || '7777', // Hardware Security Key PIN
   twoFactorEnabled: true,
-  salt: 'argus_default_salt_2026',
+  salt: process.env.AUTH_SALT || 'argus_default_salt_2026',
   createdAt: new Date()
 };
-DEFAULT_ADMIN.passwordHash = hashPassword('password123', DEFAULT_ADMIN.salt);
+DEFAULT_ADMIN.passwordHash = hashPassword(process.env.ADMIN_PASSWORD || 'password123', DEFAULT_ADMIN.salt);
 
 // Seed in-memory default user
 memoryUsers.set(DEFAULT_ADMIN.username.toLowerCase(), { ...DEFAULT_ADMIN });
