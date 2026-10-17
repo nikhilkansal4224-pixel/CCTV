@@ -47,7 +47,7 @@ module.exports = async function handler(req, res) {
   try {
     // 1. Google OAuth Client ID
     if (action === 'google-client-id') {
-      const clientId = process.env.GOOGLE_CLIENT_ID || '409626745185-pm588om09c00kgf5rcvha3voie7ap021.apps.googleusercontent.com';
+      const clientId = process.env.GOOGLE_CLIENT_ID || '473264498286-5l7grtjn65fbm8jq57v141hefb185uum.apps.googleusercontent.com';
       return res.status(200).json({ clientId });
     }
 
