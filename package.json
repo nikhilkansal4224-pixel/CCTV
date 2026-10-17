@@ -1,0 +1,29 @@
+{
+  "name": "surreal-cctv",
+  "version": "1.0.0",
+  "description": "Multi-Camera Surrealist CCTV with WebRTC QR-Pairing and AI Human Detection",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel"
+  },
+  "keywords": [
+    "cctv",
+    "webrtc",
+    "human-detection",
+    "surrealism",
+    "bento-grid",
+    "glassmorphism"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "localtunnel": "^2.0.2",
+    "mongodb": "^7.7.0"
+  },
+  "devDependencies": {
+    "vercel": "^64.5.0"
+  }
+}

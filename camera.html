@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ARGUS Mobile CCTV Node // Live Uplink</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300f0ff'><circle cx='12' cy='12' r='4'/></svg>">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body class="mobile-cam-body">
+
+  <!-- Surreal Background Ambience -->
+  <div class="surreal-canvas-wrapper">
+    <img src="assets/images/surreal_bg.jpg" alt="Surreal Void" class="surreal-bg-image">
+    <div class="surreal-vignette"></div>
+  </div>
+
+  <!-- Mobile Top HUD -->
+  <div class="mobile-top-hud">
+    <div class="status-pill" id="mobileStatusPill">
+      <span class="status-dot active"></span>
+      <span id="mobileStatusText">READY TO STREAM</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <div class="status-pill" style="padding: 0.35rem 0.65rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-emerald);">
+          <rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect>
+          <line x1="22" y1="11" x2="22" y2="13"></line>
+        </svg>
+        <span id="batteryLevel" style="font-size: 0.72rem; color: var(--accent-emerald);">100%</span>
+      </div>
+
+      <a href="index.html" class="glass-btn" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+        Hub ⤢
+      </a>
+    </div>
+  </div>
+
+  <!-- Quick Room Code Entry Overlay (Shown if room not specified or to switch) -->
+  <div id="mobileRoomDialog" style="display: none; position: absolute; inset: 0; z-index: 50; background: rgba(5,7,13,0.88); backdrop-filter: blur(20px); align-items: center; justify-content: center; padding: 1.5rem;">
+    <div class="bento-card" style="max-width: 360px; width: 100%; text-align: center; gap: 1rem;">
+      <div class="card-title" style="font-size: 1.25rem;">📱 Connect Mobile Lens</div>
+      <p style="font-size: 0.82rem; color: var(--text-muted);">
+        Enter the 4-character Room PIN displayed on your CCTV dashboard screen:
+      </p>
+
+      <div style="display: flex; justify-content: center;">
+        <input type="text" id="inputManualPin" maxlength="6" placeholder="PIN"
+               style="width: 180px; text-align: center; font-family: var(--font-hud); font-size: 1.8rem; font-weight: 800; letter-spacing: 0.25em; text-transform: uppercase; background: rgba(255, 255, 255, 0.1); border: 2px solid var(--accent-cyan); border-radius: 12px; color: #fff; padding: 0.5rem; outline: none; box-shadow: 0 0 20px var(--accent-cyan-glow);">
+      </div>
+
+      <button class="glass-btn glass-btn-primary" id="btnConnectManualPin" style="width: 100%; justify-content: center; padding: 0.75rem; font-size: 1rem;">
+        ⚡ Start CCTV Stream
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile Camera Viewfinder -->
+  <div class="mobile-viewfinder" style="margin-top: 3.5rem;">
+    <video id="mobilePreview" autoplay playsinline muted></video>
+
+    <!-- Sci-Fi Corner Brackets -->
+    <div class="hud-corner tl"></div>
+    <div class="hud-corner tr"></div>
+    <div class="hud-corner bl"></div>
+    <div class="hud-corner br"></div>
+
+    <!-- Live Watermark Overlay -->
+    <div style="position: absolute; bottom: 12px; left: 14px; font-family: var(--font-hud); font-size: 0.68rem; color: rgba(255, 255, 255, 0.9); text-shadow: 0 1px 4px #000;">
+      HUB PIN: <span id="mobileRoomId" style="color: var(--accent-cyan); font-weight: 800;">--</span> // P2P LIVE STREAM
+    </div>
+
+    <!-- Tap to Start Button if Autoplay was Blocked -->
+    <div id="btnTapToStart" style="display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; z-index: 20;">
+      <button class="glass-btn glass-btn-primary" style="padding: 1rem 1.75rem; font-size: 1.05rem;">
+        📷 Tap to Enable Camera
+      </button>
+      <span style="font-size: 0.75rem; color: var(--text-muted);">Browser requires one tap to start camera</span>
+    </div>
+  </div>
+
+  <!-- Mobile Controls Dock -->
+  <div class="mobile-controls-dock">
+    <!-- Camera Flip (Rear / Front) -->
+    <button class="mobile-btn-action" id="btnFlipCam" title="Flip Camera Lens">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20 10c0-4.418-3.582-8-8-8s-8 3.582-8 8c0 2.21 0.895 4.21 2.343 5.657L3 19h5v-5l-1.657 1.657C5.074 14.388 4.5 12.828 4.5 11c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5c0 1.828-0.574 3.388-1.843 4.657L14 14v5h5l-2.343-2.343C19.105 15.21 20 13.21 20 11z"/>
+      </svg>
+    </button>
+
+    <!-- Torch / Flashlight (if supported by hardware) -->
+    <button class="mobile-btn-action" id="btnTorch" title="Toggle Flashlight Torch" style="display: none;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+      </svg>
+    </button>
+
+    <!-- Room Switcher Button -->
+    <button class="mobile-btn-action" id="btnChangeRoom" title="Change Room PIN">
+      <span style="font-family: var(--font-hud); font-size: 0.75rem; font-weight: 700; color: var(--accent-cyan);">PIN</span>
+    </button>
+  </div>
+
+  <script src="js/camera-node.js"></script>
+</body>
+</html>

@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARGUS // Surreal Multi-Camera CCTV & Neural Human Detection System</title>
+  <meta name="description" content="Next-generation multi-camera surveillance hub. Connect mobile phones and laptops via QR code with real-time AI human and motion detection, wrapped in dark glassmorphism and surrealist aesthetics.">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300f0ff'><circle cx='12' cy='12' r='4'/><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/></svg>">
+
+  <!-- Core Libraries: TensorFlow.js, COCO-SSD, PeerJS, QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- Surrealist Living Background Engine -->
+  <div class="surreal-canvas-wrapper">
+    <img src="assets/images/surreal_bg.jpg" alt="Surreal Void Art" class="surreal-bg-image">
+    <canvas id="surrealCanvas" class="surreal-canvas"></canvas>
+    <div class="surreal-vignette"></div>
+    <div class="surreal-pulse-overlay"></div>
+  </div>
+
+  <!-- Main Application Shell -->
+  <div class="app-container">
+
+    <!-- ====================================================================
+         TOP HEADER BAR (Glassmorphism Pill)
+         ==================================================================== -->
+    <header class="main-header">
+      <div class="brand-section">
+        <div class="brand-logo-eye">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3" fill="#00f0ff"></circle>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">ARGUS <span class="brand-tag">v3.0 NEURAL EYE</span></h1>
+          <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-hud);">
+            SURREAL MULTI-CAMERA SURVEILLANCE & HUMAN DETECTION MATRIX
+          </div>
+        </div>
+      </div>
+
+      <!-- Telemetry Status Badges -->
+      <div class="telemetry-bar">
+        <div class="status-pill" id="statusHubPill">
+          <span class="status-dot"></span>
+          <span class="pill-text">CONNECTING HUB...</span>
+        </div>
+
+        <div class="status-pill" id="statusMongoPill" title="Local MongoDB Database Engine">
+          <span class="status-dot"></span>
+          <span class="pill-text">MONGODB: CONNECTING...</span>
+        </div>
+
+        <div class="status-pill" id="statusAiPill">
+          <span class="status-dot"></span>
+          <span class="pill-text">INITIALIZING AI SENTINEL...</span>
+        </div>
+
+        <div class="status-pill">
+          <span class="status-dot active"></span>
+          <span id="activeCamCountBadge">0 CAMERAS</span>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="header-actions">
+        <button class="glass-btn glass-btn-primary" id="btnAddLaptop">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          + Add Laptop Cam
+        </button>
+
+        <button class="glass-btn" id="btnAddSim" title="Add virtual test camera with walking human simulation">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          Simulate Demo Feed
+        </button>
+      </div>
+    </header>
+
+    <!-- ====================================================================
+         BENTO GRID MATRIX
+         ==================================================================== -->
+    <main class="bento-grid">
+
+      <!-- BENTO CARD 1: HERO PRIMARY SUPER-FEED (8 cols x 4 rows) -->
+      <section class="bento-card bento-hero-feed" aria-label="Primary Camera Viewport">
+        <div class="card-header" style="margin-bottom: 0.6rem;">
+          <div class="card-title-group">
+            <div class="card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 7l-7 5 7 5V7z"></path>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Primary Surveillance Viewport</div>
+              <div class="card-subtitle">REAL-TIME TENSORFLOW AI ANALYSIS & HUD TARGET LOCK</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="glass-btn" id="btnManualSnap" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" title="Capture Snapshot Now">
+              📸 Snapshot
+            </button>
+            <button class="glass-btn" id="btnFullscreen" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" title="Expand Fullscreen">
+              ⛶ Fullscreen
+            </button>
+          </div>
+        </div>
+
+        <!-- Video Viewport & Sci-Fi HUD Canvas -->
+        <div class="viewport-container">
+          <video id="primaryVideo" class="main-video-feed" autoplay playsinline muted></video>
+          <canvas id="hudCanvas" class="hud-canvas"></canvas>
+
+          <!-- Sci-Fi Corner Accents -->
+          <div class="hud-corner tl"></div>
+          <div class="hud-corner tr"></div>
+          <div class="hud-corner bl"></div>
+          <div class="hud-corner br"></div>
+
+          <!-- Top HUD Badges -->
+          <div class="viewport-overlay-top">
+            <div class="cam-badge-group">
+              <span class="cam-live-indicator">
+                <span class="status-dot alert" style="width: 6px; height: 6px;"></span>
+                REC LIVE
+              </span>
+              <span class="cam-meta-badge" id="primaryCamBadge">STANDBY // NO CAM SELECTED</span>
+            </div>
+
+            <div class="cam-badge-group">
+              <span class="cam-meta-badge" id="primaryFpsBadge">-- FPS</span>
+              <span class="cam-meta-badge" id="primaryResBadge">-- x --</span>
+            </div>
+          </div>
+
+          <!-- Threat Alert Popup Banner -->
+          <div class="threat-alert-banner" id="threatAlertBanner">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span class="banner-text">WARNING: HUMAN MOVEMENT DETECTED</span>
+          </div>
+        </div>
+
+        <!-- Viewport Controls & Shader Presets Bar -->
+        <div class="viewport-controls-bar">
+          <div class="vision-filter-chips">
+            <span style="font-size: 0.72rem; font-family: var(--font-hud); color: var(--text-muted); margin-right: 0.25rem;">VISION:</span>
+            <button class="chip-btn active" data-filter="normal">Normal RGB</button>
+            <button class="chip-btn" data-filter="night-vision">Night Vision (IR)</button>
+            <button class="chip-btn" data-filter="thermal">Thermal FLIR</button>
+            <button class="chip-btn" data-filter="cyberpunk">Cyber HUD</button>
+          </div>
+
+          <div class="viewport-actions">
+            <button class="glass-btn glass-btn-primary" id="btnToggleAudio" style="font-size: 0.75rem; padding: 0.35rem 0.85rem;">
+              🔊 AUDIO ALARM ON
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 2: QR CODE & MOBILE PAIRING (4 cols x 2 rows) -->
+      <section class="bento-card bento-qr-pair">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Connect Mobile Camera</div>
+              <div class="card-subtitle">INSTANT QR P2P WEBRTC PAIRING</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Network Connection Mode Switcher (Global HTTPS vs Local Wi-Fi) -->
+        <div style="display: flex; gap: 0.4rem; margin-bottom: 0.6rem;">
+          <button class="chip-btn active" id="btnModeGlobal" style="flex: 1; text-align: center; font-size: 0.7rem; padding: 0.35rem;">
+            🌐 Any Wi-Fi / 4G / 5G (Global)
+          </button>
+          <button class="chip-btn" id="btnModeLocal" style="flex: 1; text-align: center; font-size: 0.7rem; padding: 0.35rem;">
+            🏠 Same Wi-Fi (Local LAN)
+          </button>
+        </div>
+
+        <div class="qr-deck-content">
+          <div class="qr-code-frame">
+            <div id="qrCodeContainer"></div>
+            <div class="qr-scanner-laser"></div>
+          </div>
+
+          <div class="qr-instructions">
+            <div class="qr-step">
+              <div class="step-num">1</div>
+              <div>Scan QR with phone on <b>ANY Wi-Fi, 4G, or 5G</b> worldwide.</div>
+            </div>
+            <div class="qr-step">
+              <div class="step-num">2</div>
+              <div>HTTPS encrypted tunnel enables camera permissions anywhere.</div>
+            </div>
+            <div class="qr-step">
+              <div class="step-num">3</div>
+              <div>Streams encrypted 1080p video directly to this CCTV Hub!</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fast Mobile 4-Digit PIN Code -->
+        <div class="mobile-pin-row">
+          <div class="pin-label-group">
+            <span class="pin-label-text">Fast Mobile Room PIN:</span>
+            <span class="pin-code-display" id="displayRoomPin">----</span>
+          </div>
+          <button class="glass-btn" id="btnCopyPin" style="padding: 0.35rem 0.65rem; font-size: 0.72rem;">
+            Copy PIN
+          </button>
+        </div>
+
+        <div class="link-input-pill">
+          <span style="font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-hud);">LINK:</span>
+          <input type="text" id="mobileLinkInput" class="link-input-text" readonly value="Generating...">
+          <button class="glass-btn" id="btnCopyLink" style="padding: 0.3rem 0.75rem; font-size: 0.72rem;">
+            Copy
+          </button>
+        </div>
+
+        <!-- Tunnel Password Banner if using loca.lt -->
+        <div class="tunnel-pass-box" id="tunnelPassBox" style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; background: rgba(0, 240, 255, 0.08); border: 1px dashed rgba(0, 240, 255, 0.4); border-radius: 8px; padding: 0.35rem 0.65rem; margin-top: 0.45rem;">
+          <div style="font-size: 0.68rem; color: var(--text-secondary); font-family: var(--font-hud);">
+            Tunnel Password (if asked): <span id="tunnelPassCode" style="color: var(--accent-cyan); font-weight: 700;">--</span>
+          </div>
+          <button class="glass-btn" id="btnCopyTunnelPass" style="padding: 0.2rem 0.5rem; font-size: 0.65rem;">
+            Copy
+          </button>
+        </div>
+
+        <!-- Quick 1-Click Launch Mobile Lens in Tab -->
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.65rem;">
+          <button class="glass-btn glass-btn-primary" id="btnOpenMobileTab" style="flex: 1; justify-content: center; font-size: 0.76rem; padding: 0.45rem;">
+            📱 Test Mobile Lens (Open in New Tab)
+          </button>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 3: AI DETECTION & RADAR (4 cols x 2 rows) -->
+      <section class="bento-card bento-radar">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-magenta);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path>
+                <path d="M12 6a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Neural Human Threat Radar</div>
+              <div class="card-subtitle">AI TARGET TRACKING & MOTION TELEMETRY</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Radar Stats Row -->
+        <div class="radar-stats-row">
+          <div class="stat-box">
+            <div class="stat-label">Humans In View</div>
+            <div class="stat-value" id="humanCountStat">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Motion Intensity</div>
+            <div class="stat-value highlight" id="motionIntensityStat">0%</div>
+          </div>
+        </div>
+
+        <!-- Dynamic Waveform Visualizer -->
+        <div class="waveform-box">
+          <canvas id="waveformCanvas" class="waveform-canvas"></canvas>
+        </div>
+
+        <!-- Sensitivity Slider Row -->
+        <div class="radar-controls-row">
+          <div class="slider-group">
+            <span style="font-family: var(--font-hud); font-size: 0.7rem;">SENSITIVITY:</span>
+            <input type="range" id="sensitivitySlider" min="0.2" max="0.85" step="0.05" value="0.45">
+            <span id="sensitivityVal" style="font-family: var(--font-hud); font-size: 0.72rem; color: var(--accent-cyan);">45%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 4: MULTI-CAMERA WALL (8 cols x 2 rows) -->
+      <section class="bento-card bento-cam-wall">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-emerald);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                <line x1="6" y1="18" x2="6.01" y2="18"></line>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Multi-Camera Feed Matrix</div>
+              <div class="card-subtitle">CLICK ANY FEED TO SWITCH PRIMARY SURVEILLANCE FOCUS</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Camera Thumbnails Wall -->
+        <div class="cam-grid-thumbnails" id="camWallGrid">
+          <!-- Add camera slot button -->
+          <div class="cam-add-slot" id="slotAddCam" title="Activate Laptop Camera">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span style="font-family: var(--font-hud); font-size: 0.72rem;">ADD CAMERA FEED</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- BENTO CARD 5: EVENT LOG & SNAPSHOTS GALLERY (4 cols x 2 rows) -->
+      <section class="bento-card bento-event-log">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-amber);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Surveillance Event Journal</div>
+              <div class="card-subtitle">EVIDENCE SNAPSHOTS & INTRUSION ALERTS</div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="status-pill" id="dbEventsCountBadge" style="padding: 0.25rem 0.65rem; font-size: 0.68rem;">0 IN MONGODB</span>
+            <button class="glass-btn glass-btn-danger" id="btnClearEvents" style="padding: 0.25rem 0.55rem; font-size: 0.68rem;" title="Clear All MongoDB Events">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Events List -->
+        <div class="events-list" id="eventsList">
+          <div class="empty-log-placeholder" style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: 0.8rem; font-family: var(--font-hud);">
+            Awaiting human motion telemetry events...
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ====================================================================
+       SNAPSHOT LIGHTBOX MODAL
+       ==================================================================== -->
+  <div class="modal-overlay" id="snapModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div style="font-family: var(--font-hud); font-size: 0.85rem; color: var(--accent-cyan);" id="snapModalTitle">
+          INSPECTION // EVIDENCE CAPTURE
+        </div>
+        <button class="glass-btn" id="btnCloseModal" style="padding: 0.3rem 0.6rem;">✕</button>
+      </div>
+      <div class="modal-body">
+        <img id="snapModalImg" class="modal-img-preview" src="" alt="Captured Evidence">
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <a id="snapModalDownload" class="glass-btn glass-btn-primary" download="cctv-capture.jpg">
+            📥 Download High-Res Snapshot
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic Scripts -->
+  <script src="js/surreal-bg.js"></script>
+  <script src="js/detector.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
