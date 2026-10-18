@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SENTINEL // QR-Based WebRTC Camera Access System</title>
+  <meta name="description" content="Professional real-time peer-to-peer camera access system with temporary QR code pairing, explicit consent, and WebRTC encryption.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">SENTINEL</span>
+        <span class="brand-tag">P2P CAMERA GATEWAY</span>
+      </div>
+    </div>
+
+    <div class="header-status-group">
+      <div class="network-badge secure" title="Encrypted Connection Ready">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+        <span>WEBRTC SECURE</span>
+      </div>
+
+      <div class="status-pill" id="connectionStatusPill">
+        <span class="status-dot waiting" id="statusDot"></span>
+        <span id="statusText">WAITING FOR SCANNER</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Dashboard Grid -->
+  <main class="dashboard-container">
+    
+    <!-- Left Hero: Camera Viewport Player -->
+    <section class="viewport-card">
+      <div class="viewport-header">
+        <div class="viewport-title-group">
+          <div class="feed-indicator" id="feedIndicator">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="8" />
+            </svg>
+            <span>REMOTE CAMERA FEED</span>
+          </div>
+        </div>
+
+        <div class="hud-telemetry">
+          <div class="hud-item">RES: <strong id="hudRes">--</strong></div>
+          <div class="hud-item">FPS: <strong id="hudFps">-- fps</strong></div>
+          <div class="hud-item">RATE: <strong id="hudBitrate">-- kbps</strong></div>
+          <div class="hud-item">RTT: <strong id="hudLatency">-- ms</strong></div>
+        </div>
+      </div>
+
+      <!-- Video Display Stage -->
+      <div class="video-stage" id="videoStage">
+        <!-- Live Remote Stream -->
+        <video id="remoteVideo" class="remote-video" autoplay playsinline muted></video>
+
+        <!-- Viewport HUD & Reticle -->
+        <div class="viewport-reticle" id="viewportReticle">
+          <div class="reticle-corner tl"></div>
+          <div class="reticle-corner tr"></div>
+          <div class="reticle-corner bl"></div>
+          <div class="reticle-corner br"></div>
+          <div class="reticle-center"></div>
+        </div>
+
+        <div class="viewport-timestamp" id="liveTimestamp">2026-10-18 22:30:00 UTC</div>
+        <div class="viewport-security-tag">
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          DTLS-SRTP 256
+        </div>
+
+        <!-- Standby Waiting Graphic -->
+        <div class="standby-overlay" id="standbyOverlay">
+          <div class="radar-loader">
+            <div class="radar-core">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0a2 2 0 100-4 2 2 0 000 4zm-8 4v1m12-9a6 6 0 11-12 0 6 6 0 0112 0z" />
+              </svg>
+            </div>
+          </div>
+          <h2 class="standby-title">Awaiting Camera Pairing</h2>
+          <p class="standby-subtitle">
+            Scan the temporary QR code with any smartphone or secondary device to stream live video to this screen.
+          </p>
+
+          <div class="step-checklist">
+            <div class="step-item active" id="step1">
+              <span class="step-num">1</span>
+              <span>Scan QR Code</span>
+            </div>
+            <div class="step-item" id="step2">
+              <span class="step-num">2</span>
+              <span>Device Paired</span>
+            </div>
+            <div class="step-item" id="step3">
+              <span class="step-num">3</span>
+              <span>Allow Camera Consent</span>
+            </div>
+            <div class="step-item" id="step4">
+              <span class="step-num">4</span>
+              <span>Encrypted Live Stream</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Viewport Action Toolbar -->
+      <div class="viewport-footer">
+        <div class="control-btn-group">
+          <button class="btn-icon active" id="btnToggleReticle" title="Toggle Crosshair Overlay">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="btnAspect" title="Toggle Aspect Fit/Fill">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="btnSnapshot" title="Capture Snapshot">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="btnFullscreen" title="Fullscreen">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+            </svg>
+          </button>
+        </div>
+
+        <button class="btn btn-danger" id="btnEndSession" style="display: none;">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          <span>End Session</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Right Side: Large QR Code & Session Control Dock -->
+    <aside class="session-hub">
+      
+      <!-- Prominent QR Code Card -->
+      <div class="qr-card">
+        <div class="qr-header">
+          <div class="qr-title-box">
+            <h2 class="qr-title">Camera Pairing Key</h2>
+            <span class="qr-subtitle">Scan to request camera link</span>
+          </div>
+          <div class="expiry-badge" id="expiryBadge">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span id="countdownDisplay">10:00</span>
+          </div>
+        </div>
+
+        <!-- Network & Protocol Configuration Selector -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 1.1rem;">
+          <div>
+            <label style="font-size: 0.7rem; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.25rem;">Target Network</label>
+            <select id="networkHostSelect" class="custom-select" style="padding: 0.4rem 0.6rem; font-size: 0.78rem;">
+              <option value="detecting">Detecting IP...</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 0.7rem; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.25rem;">Security Protocol</label>
+            <select id="networkProtocolSelect" class="custom-select" style="padding: 0.4rem 0.6rem; font-size: 0.78rem;">
+              <option value="https" selected>HTTPS (Port 3443)</option>
+              <option value="http">HTTP (Port 3000)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Large QR Frame -->
+        <div class="qr-frame">
+          <div class="qr-image-container" id="qrCodeContainer">
+            <div class="qr-skeleton">Initializing QR...</div>
+          </div>
+        </div>
+
+        <!-- Session Link Input & Quick Triggers -->
+        <div class="qr-actions">
+          <div class="session-url-row">
+            <input type="text" readonly id="sessionUrlInput" class="session-url-input" value="Generating URL...">
+            <button class="btn-copy" id="btnCopyLink">Copy</button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-top: 0.25rem;">
+            <a href="#" target="_blank" class="btn btn-outline" id="btnOpenLink" title="Test in new tab or window">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              <span>Test Link</span>
+            </a>
+            <button class="btn btn-primary" id="btnNewSession" title="Regenerate QR session">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>New QR</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Security & Privacy Guarantee Card -->
+      <div class="security-card">
+        <div class="security-header">
+          <div class="security-icon">
+            <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <h3 class="security-title">Zero-Trust Privacy Architecture</h3>
+        </div>
+
+        <div class="security-features">
+          <div class="security-feature">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <div>
+              <strong>Explicit User Consent Only</strong>: Scanning this code opens a permission prompt. Camera hardware cannot activate without a physical tap on the remote phone.
+            </div>
+          </div>
+
+          <div class="security-feature">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <div>
+              <strong>Peer-to-Peer Encryption</strong>: Video feeds stream directly between devices using DTLS/SRTP WebRTC protocols. No video frames are stored or analyzed on any cloud server.
+            </div>
+          </div>
+
+          <div class="security-feature">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <div>
+              <strong>Ephemeral Session Tokens</strong>: The QR pairing code self-destructs upon session termination or after the 10-minute validity window.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <script src="/js/webrtc-common.js"></script>
+  <script src="/js/host.js"></script>
+</body>
+</html>

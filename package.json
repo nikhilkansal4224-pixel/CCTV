@@ -1,0 +1,27 @@
+{
+  "name": "qr-cctv-camera-system",
+  "version": "1.0.0",
+  "description": "Secure QR-Based WebRTC Camera Access System with real-time video streaming",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test-signaling.js"
+  },
+  "keywords": [
+    "webrtc",
+    "cctv",
+    "camera",
+    "qr-code",
+    "streaming",
+    "security"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
+    "ws": "^8.18.0"
+  }
+}
