@@ -1,16 +1,19 @@
-// SENTINEL // Host Monitor Script
+// SENTINEL // Host Monitor Script (Multi-Camera Matrix Gateway)
 
 let currentSessionId = null;
 let sessionExpiresAt = null;
 let timerInterval = null;
 let ws = null;
-let pc = null;
-let statsMonitor = null;
-let remoteStream = null;
 let selectedProtocol = window.location.protocol === 'https:' ? 'https' : 'https';
 let selectedHost = window.location.hostname;
 
-// Elements
+// Multi-Camera Peer Storage: deviceId -> CameraPeer
+// CameraPeer: { deviceId, deviceName, pc, stream, videoEl, cardEl, statsMonitor, stats, isMuted, status }
+const cameraPeers = new Map();
+let currentViewMode = 'grid'; // 'grid' | 'focus'
+let focusedDeviceId = null;
+
+// UI Elements
 const connectionStatusPill = document.getElementById('connectionStatusPill');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
@@ -21,9 +24,17 @@ const btnCopyLink = document.getElementById('btnCopyLink');
 const btnOpenLink = document.getElementById('btnOpenLink');
 const btnNewSession = document.getElementById('btnNewSession');
 const btnEndSession = document.getElementById('btnEndSession');
-const remoteVideo = document.getElementById('remoteVideo');
 const standbyOverlay = document.getElementById('standbyOverlay');
-const viewportReticle = document.getElementById('viewportReticle');
+const cameraGrid = document.getElementById('cameraGrid');
+const cameraCountBadge = document.getElementById('cameraCountBadge');
+const hudTotalCam = document.getElementById('hudTotalCam');
+const hudActiveStream = document.getElementById('hudActiveStream');
+const btnModeGrid = document.getElementById('btnModeGrid');
+const btnModeFocus = document.getElementById('btnModeFocus');
+const connectedRosterCard = document.getElementById('connectedRosterCard');
+const rosterCountBadge = document.getElementById('rosterCountBadge');
+const rosterList = document.getElementById('rosterList');
+
 const step1 = document.getElementById('step1');
 const step2 = document.getElementById('step2');
 const step3 = document.getElementById('step3');
@@ -33,41 +44,30 @@ const step4 = document.getElementById('step4');
 const networkHostSelect = document.getElementById('networkHostSelect');
 const networkProtocolSelect = document.getElementById('networkProtocolSelect');
 
-// HUD Telemetry Elements
-const hudFps = document.getElementById('hudFps');
-const hudBitrate = document.getElementById('hudBitrate');
-const hudRes = document.getElementById('hudRes');
-const hudLatency = document.getElementById('hudLatency');
-const liveTimestamp = document.getElementById('liveTimestamp');
-
-// Controls
-const btnFullscreen = document.getElementById('btnFullscreen');
-const btnSnapshot = document.getElementById('btnSnapshot');
-const btnAspect = document.getElementById('btnAspect');
-const btnToggleReticle = document.getElementById('btnToggleReticle');
-const videoStage = document.getElementById('videoStage');
-
 // User Profile Elements
 const userNameEl = document.getElementById('userName');
 const userRoleEl = document.getElementById('userRole');
 const userAvatarEl = document.getElementById('userAvatar');
 const btnLogout = document.getElementById('btnLogout');
 
-// Viewport Toolbar & Recording Elements
+// Global Viewport Toolbar & Recording Elements
 const btnRecord = document.getElementById('btnRecord');
 const recordTimer = document.getElementById('recordTimer');
 const recordIcon = document.getElementById('recordIcon');
 const btnMuteAudio = document.getElementById('btnMuteAudio');
 const audioIcon = document.getElementById('audioIcon');
+const btnSnapshot = document.getElementById('btnSnapshot');
+const btnFullscreen = document.getElementById('btnFullscreen');
 const btnExtendSession = document.getElementById('btnExtendSession');
 const eventLogContainer = document.getElementById('eventLogContainer');
 const btnClearLog = document.getElementById('btnClearLog');
+const videoStage = document.getElementById('videoStage');
 
 let mediaRecorder = null;
 let recordedChunks = [];
 let recordInterval = null;
 let recordSeconds = 0;
-let isAudioMuted = true; // default video muted to avoid local loop feedback
+let isAudioMuted = true;
 
 function logEvent(tag, message) {
   if (!eventLogContainer) return;
@@ -77,14 +77,6 @@ function logEvent(tag, message) {
   eventLogContainer.appendChild(row);
   eventLogContainer.scrollTop = eventLogContainer.scrollHeight;
 }
-
-// Clock watermark
-setInterval(() => {
-  if (liveTimestamp) {
-    const now = new Date();
-    liveTimestamp.textContent = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-  }
-}, 1000);
 
 async function checkAuthAndProfile() {
   try {
@@ -130,7 +122,6 @@ async function loadNetworkInfo() {
         const opt = document.createElement('option');
         opt.value = ip;
         opt.textContent = ip === 'localhost' ? 'Localhost (This PC)' : `LAN: ${ip}`;
-        // Prefer LAN IP by default so phone scanner works out of the box
         if (ip !== 'localhost' && !selectedHost.includes('.')) {
           opt.selected = true;
           selectedHost = ip;
@@ -156,7 +147,7 @@ async function loadNetworkInfo() {
 async function createNewSession() {
   cleanupCurrentSession();
 
-  updateStatus('waiting', 'GENERATING SESSION...');
+  updateStatus('waiting', 'GENERATING MATRIX SESSION...');
 
   try {
     const queryParams = new URLSearchParams({
@@ -182,9 +173,10 @@ async function createNewSession() {
     // Connect Signaling WebSocket
     connectWebSocket(currentSessionId);
 
-    updateStatus('waiting', 'WAITING FOR SCANNER');
+    updateStatus('waiting', 'WAITING FOR CAMERAS');
     setStep(1);
-    showToast('New secure session generated');
+    updateCameraMatrixCounts();
+    showToast('New secure multi-device gateway ready');
   } catch (err) {
     console.error('Session init error:', err);
     updateStatus('ended', 'ERROR INITIALIZING');
@@ -247,15 +239,363 @@ function updateStatus(state, label) {
 function setStep(activeStep) {
   [step1, step2, step3, step4].forEach((el, idx) => {
     if (el) {
-      if (idx + 1 === activeStep) {
-        el.className = 'step-item active';
-      } else if (idx + 1 < activeStep) {
-        el.className = 'step-item';
-      } else {
-        el.className = 'step-item';
-      }
+      el.className = (idx + 1 <= activeStep) ? 'step-item active' : 'step-item';
     }
   });
+}
+
+// Update Counts, Roster, and Grid Attributes
+function updateCameraMatrixCounts() {
+  const total = cameraPeers.size;
+  const live = Array.from(cameraPeers.values()).filter(p => p.status === 'live').length;
+
+  if (cameraCountBadge) cameraCountBadge.textContent = `${total} Device${total === 1 ? '' : 's'}`;
+  if (hudTotalCam) hudTotalCam.textContent = total;
+  if (hudActiveStream) hudActiveStream.textContent = live;
+  if (rosterCountBadge) rosterCountBadge.textContent = `${total} Online`;
+
+  if (cameraGrid) {
+    cameraGrid.setAttribute('data-count', Math.min(Math.max(total, 1), 9));
+  }
+
+  if (total === 0) {
+    if (standbyOverlay) standbyOverlay.style.display = 'flex';
+    if (connectedRosterCard) connectedRosterCard.style.display = 'none';
+    if (btnEndSession) btnEndSession.style.display = 'none';
+    updateStatus('waiting', 'WAITING FOR CAMERAS');
+    setStep(1);
+    focusedDeviceId = null;
+  } else {
+    if (standbyOverlay) standbyOverlay.style.display = 'none';
+    if (connectedRosterCard) connectedRosterCard.style.display = 'block';
+    if (btnEndSession) btnEndSession.style.display = 'inline-flex';
+    if (live > 0) {
+      updateStatus('live', `${live} ENCRYPTED FEED${live === 1 ? '' : 'S'} LIVE`);
+      setStep(4);
+    } else {
+      updateStatus('waiting', `${total} DEVICE${total === 1 ? '' : 'S'} PAIRED — AWAITING CONSENT`);
+      setStep(2);
+    }
+  }
+
+  renderConnectedRoster();
+}
+
+// Render Sidebar Connected Device Roster
+function renderConnectedRoster() {
+  if (!rosterList) return;
+  rosterList.innerHTML = '';
+
+  cameraPeers.forEach(peer => {
+    const item = document.createElement('div');
+    item.className = 'roster-item';
+    const isLive = peer.status === 'live';
+
+    item.innerHTML = `
+      <div class="roster-item-info">
+        <div style="display: flex; align-items: center; gap: 0.4rem;">
+          <span class="status-dot ${isLive ? 'live' : 'waiting'}" style="width: 7px; height: 7px;"></span>
+          <span class="roster-item-name">${escapeHtml(peer.deviceName)}</span>
+        </div>
+        <div class="roster-item-meta">ID: <strong>${escapeHtml(peer.deviceId)}</strong> • ${isLive ? 'Live 720p' : 'Pairing'}</div>
+      </div>
+      <button class="roster-kick-btn" title="Disconnect this camera" data-device-id="${peer.deviceId}">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    `;
+
+    const kickBtn = item.querySelector('.roster-kick-btn');
+    kickBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      disconnectDevice(peer.deviceId);
+    });
+
+    item.addEventListener('click', () => {
+      focusCamera(peer.deviceId);
+    });
+
+    rosterList.appendChild(item);
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Get or Create Camera Grid Tile
+function getOrCreateCameraTile(deviceId, deviceName) {
+  if (cameraPeers.has(deviceId)) {
+    const peer = cameraPeers.get(deviceId);
+    if (deviceName && deviceName !== peer.deviceName) {
+      peer.deviceName = deviceName;
+      const nameEl = peer.cardEl.querySelector('.tile-device-name');
+      if (nameEl) nameEl.textContent = deviceName;
+    }
+    return peer;
+  }
+
+  const cleanName = deviceName || `Camera ${deviceId}`;
+
+  const cardEl = document.createElement('div');
+  cardEl.className = 'camera-tile';
+  cardEl.id = `tile-${deviceId}`;
+
+  cardEl.innerHTML = `
+    <div class="tile-header">
+      <div class="tile-identity">
+        <span class="tile-device-id">${escapeHtml(deviceId)}</span>
+        <span class="tile-device-name">${escapeHtml(cleanName)}</span>
+      </div>
+
+      <div class="tile-header-actions">
+        <!-- Snapshot Frame -->
+        <button class="tile-btn btn-tile-snap" title="Snapshot Frame">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+
+        <!-- Audio Mute / Listen Toggle -->
+        <button class="tile-btn btn-tile-mute" title="Audio Listen / Mute">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+        </button>
+
+        <!-- Focus / Maximize Feed -->
+        <button class="tile-btn btn-tile-focus" title="Focus Single Camera">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+        </button>
+
+        <!-- Disconnect Device -->
+        <button class="tile-btn danger btn-tile-kick" title="Disconnect Camera">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="tile-video-wrap">
+      <video class="tile-video" autoplay playsinline muted></video>
+
+      <!-- Waiting / Connecting Overlay -->
+      <div class="tile-waiting-overlay">
+        <div class="tile-waiting-spinner"></div>
+        <div style="font-size: 0.8rem; font-weight: 600; color: #ffffff;">Awaiting Hardware Consent</div>
+        <div style="font-size: 0.7rem; color: var(--text-tertiary);">User must tap "Allow & Start Camera" on device</div>
+      </div>
+
+      <!-- Live Badge -->
+      <div class="tile-live-badge" style="display: none;">
+        <span class="badge-dot"></span>
+        <span>REC LIVE</span>
+      </div>
+
+      <!-- Tile Telemetry HUD -->
+      <div class="tile-hud" style="display: none;">
+        <span>FPS: <strong class="tile-fps">--</strong></span>
+        <span>RES: <strong class="tile-res">--</strong></span>
+        <span>RATE: <strong class="tile-rate">--</strong></span>
+      </div>
+    </div>
+  `;
+
+  const videoEl = cardEl.querySelector('.tile-video');
+  const btnSnap = cardEl.querySelector('.btn-tile-snap');
+  const btnMute = cardEl.querySelector('.btn-tile-mute');
+  const btnFocus = cardEl.querySelector('.btn-tile-focus');
+  const btnKick = cardEl.querySelector('.btn-tile-kick');
+
+  btnSnap.addEventListener('click', (e) => {
+    e.stopPropagation();
+    captureTileSnapshot(deviceId);
+  });
+
+  btnMute.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTileAudio(deviceId);
+  });
+
+  btnFocus.addEventListener('click', (e) => {
+    e.stopPropagation();
+    focusCamera(deviceId);
+  });
+
+  btnKick.addEventListener('click', (e) => {
+    e.stopPropagation();
+    disconnectDevice(deviceId);
+  });
+
+  cameraGrid.appendChild(cardEl);
+
+  const peer = {
+    deviceId,
+    deviceName: cleanName,
+    pc: null,
+    stream: null,
+    videoEl,
+    cardEl,
+    statsMonitor: null,
+    stats: { fps: 0, bitrate: 0, width: 0, height: 0, rtt: 0 },
+    isMuted: true,
+    status: 'waiting',
+  };
+
+  cameraPeers.set(deviceId, peer);
+  updateCameraMatrixCounts();
+  return peer;
+}
+
+// Focus Mode vs Grid Mode
+function focusCamera(deviceId) {
+  if (focusedDeviceId === deviceId) {
+    // Unfocus back to grid
+    restoreGridView();
+    return;
+  }
+
+  focusedDeviceId = deviceId;
+  currentViewMode = 'focus';
+
+  cameraPeers.forEach((peer, id) => {
+    if (id === deviceId) {
+      peer.cardEl.classList.add('focused');
+      // Add return banner if not already there
+      let banner = peer.cardEl.querySelector('.focus-return-banner');
+      if (!banner) {
+        banner = document.createElement('button');
+        banner.className = 'focus-return-banner';
+        banner.innerHTML = `
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span>Back to Grid View</span>
+        `;
+        banner.addEventListener('click', (e) => {
+          e.stopPropagation();
+          restoreGridView();
+        });
+        peer.cardEl.appendChild(banner);
+      }
+      banner.style.display = 'inline-flex';
+    } else {
+      peer.cardEl.classList.remove('focused');
+      const banner = peer.cardEl.querySelector('.focus-return-banner');
+      if (banner) banner.style.display = 'none';
+    }
+  });
+
+  if (btnModeGrid) btnModeGrid.classList.remove('active');
+  if (btnModeFocus) btnModeFocus.classList.add('active');
+}
+
+function restoreGridView() {
+  focusedDeviceId = null;
+  currentViewMode = 'grid';
+
+  cameraPeers.forEach(peer => {
+    peer.cardEl.classList.remove('focused');
+    const banner = peer.cardEl.querySelector('.focus-return-banner');
+    if (banner) banner.style.display = 'none';
+  });
+
+  if (btnModeGrid) btnModeGrid.classList.add('active');
+  if (btnModeFocus) btnModeFocus.classList.remove('active');
+}
+
+// Disconnect single device initiated by host
+function disconnectDevice(deviceId) {
+  const peer = cameraPeers.get(deviceId);
+  const name = peer ? peer.deviceName : deviceId;
+
+  if (confirm(`Disconnect camera [${name}] from surveillance matrix?`)) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'disconnect-device',
+        sessionId: currentSessionId,
+        deviceId,
+      }));
+    }
+    teardownCameraPeer(deviceId);
+    logEvent('SYS', `Camera kicked by operator: ${name} [${deviceId}]`);
+    showToast(`Disconnected camera ${name}`);
+  }
+}
+
+function teardownCameraPeer(deviceId) {
+  if (!cameraPeers.has(deviceId)) return;
+  const peer = cameraPeers.get(deviceId);
+
+  if (peer.statsMonitor) peer.statsMonitor.stop();
+  if (peer.pc) {
+    try { peer.pc.close(); } catch (e) {}
+  }
+  if (peer.videoEl) {
+    peer.videoEl.srcObject = null;
+  }
+  if (peer.cardEl && peer.cardEl.parentNode) {
+    peer.cardEl.parentNode.removeChild(peer.cardEl);
+  }
+
+  cameraPeers.delete(deviceId);
+  if (focusedDeviceId === deviceId) {
+    restoreGridView();
+  }
+  updateCameraMatrixCounts();
+}
+
+// Toggle audio listening for single device
+function toggleTileAudio(deviceId) {
+  const peer = cameraPeers.get(deviceId);
+  if (!peer || !peer.videoEl) return;
+
+  peer.isMuted = !peer.isMuted;
+  peer.videoEl.muted = peer.isMuted;
+
+  const btnMute = peer.cardEl.querySelector('.btn-tile-mute');
+  if (btnMute) btnMute.classList.toggle('active', !peer.isMuted);
+
+  showToast(`${peer.deviceName}: ${peer.isMuted ? 'Muted' : 'Audio Listening'}`);
+  logEvent('AUDIO', `${peer.isMuted ? 'Muted' : 'Listening to'} ${peer.deviceName} [${deviceId}]`);
+}
+
+// Capture frame snapshot for single device
+function captureTileSnapshot(deviceId) {
+  const peer = cameraPeers.get(deviceId);
+  if (!peer || !peer.videoEl || !peer.videoEl.videoWidth) {
+    return showToast('Cannot snapshot: camera stream not active yet');
+  }
+
+  const video = peer.videoEl;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // Digital Watermark
+  ctx.font = 'bold 20px monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#000000';
+  ctx.shadowBlur = 8;
+  const time = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  ctx.fillText(`SENTINEL // ${peer.deviceName} [${deviceId}] // ${time} UTC`, 24, canvas.height - 28);
+
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/jpeg', 0.95);
+  a.download = `sentinel_${deviceId}_${Date.now()}.jpg`;
+  a.click();
+
+  showToast(`Snapshot saved: ${peer.deviceName}`);
+  logEvent('SNAP', `Snapshot captured from ${peer.deviceName} [${deviceId}]`);
+  if (window.sentinelAudio) window.sentinelAudio.play('snapshot');
 }
 
 // WebSocket Signaling
@@ -281,36 +621,53 @@ function connectWebSocket(sessionId) {
 
     switch (msg.type) {
       case 'joined':
-        logEvent('SYS', `Signaling link established (#${msg.sessionId})`);
+        logEvent('SYS', `Signaling channel open (#${msg.sessionId})`);
+        if (msg.cameras && Array.isArray(msg.cameras)) {
+          msg.cameras.forEach(c => {
+            getOrCreateCameraTile(c.deviceId, c.deviceName);
+          });
+        }
         break;
 
       case 'camera-joined':
-        updateStatus('waiting', 'DEVICE PAIRED — REQUESTING PERMISSION');
-        setStep(2);
-        showToast('Smartphone scanned QR code!');
-        logEvent('PEER', 'Remote smartphone paired via QR scan');
+        getOrCreateCameraTile(msg.deviceId, msg.deviceName);
+        showToast(`Device paired: ${msg.deviceName} [${msg.deviceId}]`);
+        logEvent('PEER', `Device joined grid: ${msg.deviceName} [${msg.deviceId}]`);
         if (window.sentinelAudio) window.sentinelAudio.play('connect');
         break;
 
-      case 'camera-ready':
-        updateStatus('waiting', 'PERMISSION GRANTED — STARTING WEBRTC');
-        setStep(3);
-        showToast('Camera consent granted on remote phone');
-        logEvent('CONSENT', `Camera permission granted (${msg.facingMode || 'Lens'} / ${msg.resolution || '720p'})`);
+      case 'camera-ready': {
+        const peer = getOrCreateCameraTile(msg.deviceId, msg.deviceName);
+        peer.status = 'ready';
+        showToast(`Camera permission granted on [${msg.deviceId}]`);
+        logEvent('CONSENT', `Camera permission granted: ${peer.deviceName} [${msg.deviceId}] (${msg.facingMode || 'Lens'} / ${msg.resolution || '720p'})`);
+        const overlayText = peer.cardEl.querySelector('.tile-waiting-overlay div:nth-child(2)');
+        if (overlayText) overlayText.textContent = 'Establishing Encrypted WebRTC Link...';
         break;
+      }
 
       case 'offer':
-        await handleRemoteOffer(msg.sdp);
+        await handleRemoteOffer(msg.deviceId, msg.sdp);
         break;
 
       case 'ice-candidate':
-        if (pc && msg.candidate) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-          } catch (e) {
-            console.error('Error adding ICE candidate:', e);
+        if (msg.deviceId && cameraPeers.has(msg.deviceId)) {
+          const peer = cameraPeers.get(msg.deviceId);
+          if (peer.pc && msg.candidate) {
+            try {
+              await peer.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            } catch (e) {
+              console.error('Error adding ICE candidate:', e);
+            }
           }
         }
+        break;
+
+      case 'camera-disconnected':
+        teardownCameraPeer(msg.deviceId);
+        showToast(`Camera [${msg.deviceId}] disconnected`);
+        logEvent('WARN', `Camera device disconnected: [${msg.deviceId}]`);
+        if (window.sentinelAudio) window.sentinelAudio.play('disconnect');
         break;
 
       case 'session-extended':
@@ -320,15 +677,6 @@ function connectWebSocket(sessionId) {
         countdownDisplay.parentElement.classList.remove('expired');
         showToast('Session extended (+10 mins)');
         logEvent('SYS', 'Session duration extended +10 minutes');
-        break;
-
-      case 'telemetry':
-        break;
-
-      case 'camera-disconnected':
-        handleCameraDisconnected();
-        logEvent('WARN', 'Remote camera device disconnected');
-        if (window.sentinelAudio) window.sentinelAudio.play('disconnect');
         break;
 
       case 'session-ended':
@@ -350,53 +698,69 @@ function connectWebSocket(sessionId) {
   };
 }
 
-// WebRTC PeerConnection Setup
-async function handleRemoteOffer(sdp) {
-  if (pc) {
-    pc.close();
+// WebRTC PeerConnection Setup for specific Camera Device
+async function handleRemoteOffer(deviceId, sdp) {
+  const peer = getOrCreateCameraTile(deviceId);
+
+  if (peer.pc) {
+    try { peer.pc.close(); } catch (e) {}
   }
 
-  pc = new RTCPeerConnection(window.RTC_CONFIG);
+  const pc = new RTCPeerConnection(window.RTC_CONFIG);
+  peer.pc = pc;
 
   pc.onicecandidate = (event) => {
     if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'ice-candidate',
         sessionId: currentSessionId,
+        deviceId,
         candidate: event.candidate,
       }));
     }
   };
 
   pc.ontrack = (event) => {
-    console.log('[Host] Received remote video stream track:', event.streams[0]);
-    remoteStream = event.streams[0];
-    remoteVideo.srcObject = remoteStream;
-    remoteVideo.classList.add('active');
-    standbyOverlay.style.display = 'none';
-    viewportReticle.classList.add('active');
+    console.log(`[Host] Received video track for [${deviceId}]:`, event.streams[0]);
+    peer.stream = event.streams[0];
+    peer.videoEl.srcObject = peer.stream;
+    peer.status = 'live';
 
-    updateStatus('live', 'LIVE STREAM ENCRYPTED');
-    setStep(4);
-    btnEndSession.style.display = 'inline-flex';
+    // Hide waiting overlay, show live badge and hud
+    const waitOverlay = peer.cardEl.querySelector('.tile-waiting-overlay');
+    if (waitOverlay) waitOverlay.style.display = 'none';
 
-    // Start stats monitoring
-    if (statsMonitor) statsMonitor.stop();
-    statsMonitor = new window.RTCStatsMonitor(pc, (stats) => {
-      if (hudFps) hudFps.textContent = `${stats.fps} fps`;
-      if (hudBitrate) hudBitrate.textContent = `${stats.bitrate} kbps`;
-      if (hudRes) hudRes.textContent = stats.width ? `${stats.width}x${stats.height}` : '720p HD';
-      if (hudLatency) hudLatency.textContent = `${stats.rtt} ms`;
+    const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
+    if (liveBadge) liveBadge.style.display = 'flex';
+
+    const hudEl = peer.cardEl.querySelector('.tile-hud');
+    if (hudEl) hudEl.style.display = 'flex';
+
+    updateCameraMatrixCounts();
+    showToast(`Live feed active: ${peer.deviceName} [${deviceId}]`);
+
+    // Individual camera stats monitoring
+    if (peer.statsMonitor) peer.statsMonitor.stop();
+    peer.statsMonitor = new window.RTCStatsMonitor(pc, (stats) => {
+      peer.stats = stats;
+      const fpsEl = peer.cardEl.querySelector('.tile-fps');
+      const rateEl = peer.cardEl.querySelector('.tile-rate');
+      const resEl = peer.cardEl.querySelector('.tile-res');
+
+      if (fpsEl) fpsEl.textContent = `${stats.fps}fps`;
+      if (rateEl) rateEl.textContent = `${stats.bitrate}k`;
+      if (resEl) resEl.textContent = stats.width ? `${stats.width}x${stats.height}` : '720p';
     });
-    statsMonitor.start();
-
-    showToast('Secure WebRTC live stream connected!');
+    peer.statsMonitor.start();
   };
 
   pc.oniceconnectionstatechange = () => {
-    console.log('[Host] ICE State:', pc.iceConnectionState);
+    console.log(`[Host] ICE State for [${deviceId}]:`, pc.iceConnectionState);
     if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-      updateStatus('ended', 'STREAM DISCONNECTED');
+      peer.status = 'waiting';
+      const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
+      if (liveBadge) liveBadge.style.display = 'none';
+      updateCameraMatrixCounts();
     }
   };
 
@@ -408,59 +772,45 @@ async function handleRemoteOffer(sdp) {
     ws.send(JSON.stringify({
       type: 'answer',
       sessionId: currentSessionId,
+      deviceId,
       sdp: pc.localDescription,
     }));
   }
 }
 
-function handleCameraDisconnected() {
-  updateStatus('waiting', 'CAMERA DISCONNECTED');
-  showToast('Remote camera disconnected');
-  resetStreamView();
-}
-
 function handleSessionEnded(reason) {
   updateStatus('ended', 'SESSION TERMINATED');
   showToast(reason || 'Session ended');
-  resetStreamView();
-  if (timerInterval) clearInterval(timerInterval);
+  cleanupCurrentSession();
 }
 
 function handleSessionExpired() {
   updateStatus('ended', 'SESSION EXPIRED');
   showToast('Session expired. Generate a new QR code.');
-  resetStreamView();
-}
-
-function resetStreamView() {
-  if (statsMonitor) statsMonitor.stop();
-  if (remoteVideo) {
-    remoteVideo.srcObject = null;
-    remoteVideo.classList.remove('active');
-  }
-  if (standbyOverlay) standbyOverlay.style.display = 'flex';
-  if (viewportReticle) viewportReticle.classList.remove('active');
-  if (hudFps) hudFps.textContent = '-- fps';
-  if (hudBitrate) hudBitrate.textContent = '-- kbps';
-  if (hudRes) hudRes.textContent = '--';
-  if (hudLatency) hudLatency.textContent = '-- ms';
+  cleanupCurrentSession();
 }
 
 function cleanupCurrentSession() {
-  if (statsMonitor) statsMonitor.stop();
   if (timerInterval) clearInterval(timerInterval);
-  if (pc) {
-    pc.close();
-    pc = null;
-  }
+
+  cameraPeers.forEach(peer => {
+    if (peer.statsMonitor) peer.statsMonitor.stop();
+    if (peer.pc) {
+      try { peer.pc.close(); } catch (e) {}
+    }
+    if (peer.videoEl) peer.videoEl.srcObject = null;
+  });
+  cameraPeers.clear();
+
+  if (cameraGrid) cameraGrid.innerHTML = '';
   if (ws) {
-    ws.close();
+    try { ws.close(); } catch (e) {}
     ws = null;
   }
-  resetStreamView();
+  updateCameraMatrixCounts();
 }
 
-// User Actions
+// User Actions & Event Listeners
 function setupEventListeners() {
   // Copy Session URL
   btnCopyLink.addEventListener('click', async () => {
@@ -474,10 +824,10 @@ function setupEventListeners() {
     }
   });
 
-  // End Session Button
+  // End Entire Session Button
   btnEndSession.addEventListener('click', async () => {
     if (!currentSessionId) return;
-    if (confirm('Are you sure you want to end this camera session? The remote camera will be immediately closed.')) {
+    if (confirm('Are you sure you want to end this surveillance session? All connected cameras will be disconnected.')) {
       try {
         await fetch(`/api/sessions/${currentSessionId}/end`, { method: 'POST' });
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -493,6 +843,23 @@ function setupEventListeners() {
     createNewSession();
   });
 
+  // View Mode Buttons (Grid vs Focus)
+  if (btnModeGrid) {
+    btnModeGrid.addEventListener('click', () => {
+      restoreGridView();
+    });
+  }
+  if (btnModeFocus) {
+    btnModeFocus.addEventListener('click', () => {
+      const firstLive = Array.from(cameraPeers.keys())[0];
+      if (firstLive) {
+        focusCamera(firstLive);
+      } else {
+        showToast('No active cameras to focus yet');
+      }
+    });
+  }
+
   // Fullscreen toggle
   btnFullscreen.addEventListener('click', () => {
     if (!document.fullscreenElement) {
@@ -502,44 +869,35 @@ function setupEventListeners() {
     }
   });
 
-  // Capture Snapshot Frame
+  // Global Snapshot Frame (Focus camera or first live camera)
   btnSnapshot.addEventListener('click', () => {
-    if (!remoteVideo || !remoteVideo.videoWidth) {
-      return showToast('No active video feed to capture');
+    const targetId = focusedDeviceId || Array.from(cameraPeers.keys())[0];
+    if (!targetId) {
+      return showToast('No active camera feed to capture');
     }
-    const canvas = document.createElement('canvas');
-    canvas.width = remoteVideo.videoWidth;
-    canvas.height = remoteVideo.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(remoteVideo, 0, 0, canvas.width, canvas.height);
-
-    // Add watermark
-    ctx.font = '16px monospace';
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 6;
-    ctx.fillText(`SENTINEL // ${new Date().toISOString()}`, 20, canvas.height - 24);
-
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/jpeg', 0.95);
-    a.download = `cctv-capture-${Date.now()}.jpg`;
-    a.click();
-    showToast('Snapshot saved to Downloads');
-    logEvent('SNAP', 'High-res surveillance snapshot captured');
-    if (window.sentinelAudio) window.sentinelAudio.play('snapshot');
+    captureTileSnapshot(targetId);
   });
 
-  // Video Clip Recording Toggle
+  // Video Clip Recording Toggle (Active/Focus Camera)
   if (btnRecord) {
     btnRecord.addEventListener('click', () => {
-      toggleVideoRecording();
+      toggleGlobalVideoRecording();
     });
   }
 
-  // Audio Listen / Mute Toggle
+  // Global Audio Listen / Mute Toggle
   if (btnMuteAudio) {
     btnMuteAudio.addEventListener('click', () => {
-      toggleAudioMute();
+      isAudioMuted = !isAudioMuted;
+      cameraPeers.forEach(peer => {
+        peer.isMuted = isAudioMuted;
+        if (peer.videoEl) peer.videoEl.muted = isAudioMuted;
+        const btnMute = peer.cardEl?.querySelector('.btn-tile-mute');
+        if (btnMute) btnMute.classList.toggle('active', !isAudioMuted);
+      });
+      btnMuteAudio.classList.toggle('active', !isAudioMuted);
+      showToast(isAudioMuted ? 'All room audio muted' : 'Listening to live audio');
+      logEvent('AUDIO', isAudioMuted ? 'Host muted audio listening' : 'Host listening to live room audio');
     });
   }
 
@@ -558,23 +916,6 @@ function setupEventListeners() {
       }
     });
   }
-
-  // Aspect ratio toggle
-  let isCover = false;
-  btnAspect.addEventListener('click', () => {
-    isCover = !isCover;
-    remoteVideo.style.objectFit = isCover ? 'cover' : 'contain';
-    btnAspect.classList.toggle('active', isCover);
-    showToast(isCover ? 'Aspect: Fill / Cover' : 'Aspect: Fit / Contain');
-  });
-
-  // Crosshair reticle toggle
-  let reticleEnabled = true;
-  btnToggleReticle.addEventListener('click', () => {
-    reticleEnabled = !reticleEnabled;
-    viewportReticle.style.display = reticleEnabled ? 'block' : 'none';
-    btnToggleReticle.classList.toggle('active', reticleEnabled);
-  });
 
   // Network Host & Protocol Selector changes
   if (networkHostSelect) {
@@ -606,31 +947,32 @@ function setupEventListeners() {
   }
 }
 
-function toggleVideoRecording() {
-  if (!remoteStream || !remoteStream.active) {
-    showToast('Cannot record: No active video stream');
+function toggleGlobalVideoRecording() {
+  const targetId = focusedDeviceId || Array.from(cameraPeers.keys())[0];
+  const peer = targetId ? cameraPeers.get(targetId) : null;
+
+  if (!peer || !peer.stream || !peer.stream.active) {
+    showToast('Cannot record: No active video stream to capture');
     return;
   }
 
   if (mediaRecorder && mediaRecorder.state === 'recording') {
-    // Stop recording
     mediaRecorder.stop();
     clearInterval(recordInterval);
     btnRecord.classList.remove('active');
     btnRecord.style.borderColor = '';
     recordTimer.style.display = 'none';
-    showToast('Video recording saved to Downloads');
+    showToast(`Video recording saved for ${peer.deviceName}`);
     logEvent('REC', `Video recording saved (${recordSeconds}s)`);
     if (window.sentinelAudio) window.sentinelAudio.play('record');
   } else {
-    // Start recording
     recordedChunks = [];
     recordSeconds = 0;
     try {
       const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
         ? 'video/webm;codecs=vp8,opus'
         : 'video/webm';
-      mediaRecorder = new MediaRecorder(remoteStream, { mimeType });
+      mediaRecorder = new MediaRecorder(peer.stream, { mimeType });
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) recordedChunks.push(e.data);
       };
@@ -639,12 +981,12 @@ function toggleVideoRecording() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `cctv-clip-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+        a.download = `sentinel_${peer.deviceId}_clip_${Date.now()}.webm`;
         a.click();
         URL.revokeObjectURL(url);
       };
 
-      mediaRecorder.start(1000); // 1s slice
+      mediaRecorder.start(1000);
       btnRecord.classList.add('active');
       btnRecord.style.borderColor = '#ef4444';
       recordTimer.style.display = 'inline-block';
@@ -657,23 +999,14 @@ function toggleVideoRecording() {
         recordTimer.textContent = `REC ${mins}:${secs}`;
       }, 1000);
 
-      showToast('Recording live video clip...');
-      logEvent('REC', 'Recording live surveillance clip started');
+      showToast(`Recording feed from ${peer.deviceName}...`);
+      logEvent('REC', `Started recording clip for [${peer.deviceId}]`);
       if (window.sentinelAudio) window.sentinelAudio.play('record');
     } catch (err) {
       console.error('MediaRecorder error:', err);
       showToast('Recording failed: ' + err.message);
     }
   }
-}
-
-function toggleAudioMute() {
-  if (!remoteVideo) return;
-  isAudioMuted = !isAudioMuted;
-  remoteVideo.muted = isAudioMuted;
-  btnMuteAudio.classList.toggle('active', !isAudioMuted);
-  showToast(isAudioMuted ? 'Room Audio Muted' : 'Room Audio Live');
-  logEvent('AUDIO', isAudioMuted ? 'Host muted audio listening' : 'Host listening to live room audio');
 }
 
 async function extendCurrentSession() {

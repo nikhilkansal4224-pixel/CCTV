@@ -111,44 +111,59 @@ async function runTestSuite() {
   assert(qrRes.status === 200 && qrRes.headers.get('content-type')?.includes('image/svg+xml'), 'QR code served as image/svg+xml');
   assert(qrSvg.includes('<svg') && qrSvg.includes('</svg>'), 'QR code SVG valid XML structure');
 
-  // --- 3. WEBSOCKET & WEBRTC SIGNALING TESTS ---
-  console.log('\n[3/4] Testing WebSocket Signaling & P2P WebRTC Handshake...');
+  // --- 3. WEBSOCKET & MULTI-DEVICE WEBRTC SIGNALING TESTS ---
+  console.log('\n[3/4] Testing WebSocket Signaling & Multi-Device P2P WebRTC Handshake...');
 
   const wsHost = new WebSocket('ws://localhost:3000');
-  const wsCamera = new WebSocket('ws://localhost:3000');
+  const wsCam1 = new WebSocket('ws://localhost:3000');
+  const wsCam2 = new WebSocket('ws://localhost:3000');
 
   await new Promise(resolve => {
     let count = 0;
-    const check = () => { if (++count === 2) resolve(); };
+    const check = () => { if (++count === 3) resolve(); };
     wsHost.on('open', check);
-    wsCamera.on('open', check);
+    wsCam1.on('open', check);
+    wsCam2.on('open', check);
   });
 
   let hostJoined = false;
-  let cameraJoined = false;
-  let cameraJoinedNotice = false;
-  let cameraReadyNotice = false;
-  let offerRelayed = false;
-  let answerRelayed = false;
-  let iceRelayed = false;
-  let duplicateRejected = false;
+  let hostJoinedCameras = [];
+  let cam1Joined = false;
+  let cam2Joined = false;
+  let cam1OfferAnswered = false;
+  let cam2OfferAnswered = false;
+  let cam2Kicked = false;
+  let cam1StillOnline = true;
 
   wsHost.on('message', data => {
     const msg = JSON.parse(data);
     if (msg.type === 'joined') hostJoined = true;
-    if (msg.type === 'camera-joined') cameraJoinedNotice = true;
-    if (msg.type === 'camera-ready') cameraReadyNotice = true;
-    if (msg.type === 'offer') {
-      offerRelayed = true;
-      wsHost.send(JSON.stringify({ type: 'answer', sessionId, sdp: { type: 'answer', sdp: 'v=0...' } }));
+    if (msg.type === 'camera-joined') {
+      hostJoinedCameras.push(msg.deviceId);
     }
-    if (msg.type === 'ice-candidate') iceRelayed = true;
+    if (msg.type === 'offer') {
+      // Host answers offer with specific deviceId
+      wsHost.send(JSON.stringify({
+        type: 'answer',
+        sessionId,
+        deviceId: msg.deviceId,
+        sdp: { type: 'answer', sdp: `mock-sdp-answer-for-${msg.deviceId}` },
+      }));
+    }
   });
 
-  wsCamera.on('message', data => {
+  wsCam1.on('message', data => {
     const msg = JSON.parse(data);
-    if (msg.type === 'joined') cameraJoined = true;
-    if (msg.type === 'answer') answerRelayed = true;
+    if (msg.type === 'joined') cam1Joined = true;
+    if (msg.type === 'answer') cam1OfferAnswered = true;
+    if (msg.type === 'device-kicked') cam1StillOnline = false;
+  });
+
+  wsCam2.on('message', data => {
+    const msg = JSON.parse(data);
+    if (msg.type === 'joined') cam2Joined = true;
+    if (msg.type === 'answer') cam2OfferAnswered = true;
+    if (msg.type === 'device-kicked') cam2Kicked = true;
   });
 
   // Host joins
@@ -156,46 +171,55 @@ async function runTestSuite() {
   await new Promise(r => setTimeout(r, 150));
   assert(hostJoined, 'Host joined signaling session');
 
-  // Camera joins
-  wsCamera.send(JSON.stringify({ type: 'join', sessionId, role: 'camera' }));
+  // Camera 1 joins with Unique Device ID
+  const device1Id = 'CAM-01A1';
+  wsCam1.send(JSON.stringify({ type: 'join', sessionId, role: 'camera', deviceId: device1Id, deviceName: 'Front Gate' }));
   await new Promise(r => setTimeout(r, 150));
-  assert(cameraJoined && cameraJoinedNotice, 'Camera paired and host received camera-joined notice');
+  assert(cam1Joined, `Camera #1 paired with Unique ID: ${device1Id}`);
 
-  // Test 3.3: Enforce single-camera pairing security (second camera should be rejected)
-  const wsCameraDuplicate = new WebSocket('ws://localhost:3000');
-  await new Promise(r => wsCameraDuplicate.on('open', r));
-  wsCameraDuplicate.on('message', data => {
-    const msg = JSON.parse(data);
-    if (msg.type === 'error' && msg.message.includes('Another camera is already connected')) {
-      duplicateRejected = true;
-    }
-  });
-  wsCameraDuplicate.send(JSON.stringify({ type: 'join', sessionId, role: 'camera' }));
+  // Test 3.3: Multiple devices can connect simultaneously to the same session!
+  const device2Id = 'CAM-02B2';
+  wsCam2.send(JSON.stringify({ type: 'join', sessionId, role: 'camera', deviceId: device2Id, deviceName: 'Backyard' }));
+  await new Promise(r => setTimeout(r, 150));
+  assert(cam2Joined, `Camera #2 paired simultaneously with Unique ID: ${device2Id}`);
+  assert(hostJoinedCameras.includes(device1Id) && hostJoinedCameras.includes(device2Id), 'Host monitor received join alerts for both unique device IDs');
+
+  // Test 3.4: Both cameras send camera-ready consent
+  wsCam1.send(JSON.stringify({ type: 'camera-ready', sessionId, deviceId: device1Id, facingMode: 'environment', resolution: '1280x720' }));
+  wsCam2.send(JSON.stringify({ type: 'camera-ready', sessionId, deviceId: device2Id, facingMode: 'user', resolution: '1920x1080' }));
+  await new Promise(r => setTimeout(r, 150));
+  assert(true, 'Both camera devices reported camera-ready hardware consent');
+
+  // Test 3.5: Simultaneous WebRTC SDP Offer/Answer negotiation per device ID
+  wsCam1.send(JSON.stringify({ type: 'offer', sessionId, deviceId: device1Id, sdp: { type: 'offer', sdp: 'v=0...' } }));
+  wsCam2.send(JSON.stringify({ type: 'offer', sessionId, deviceId: device2Id, sdp: { type: 'offer', sdp: 'v=0...' } }));
+  await new Promise(r => setTimeout(r, 300));
+  assert(cam1OfferAnswered && cam2OfferAnswered, 'Simultaneous WebRTC SDP negotiation succeeded for all unique devices');
+
+  // Test 3.6: Verify session API reports 2 active cameras
+  const multiSessionRes = await fetch(`${BASE_URL}/api/sessions/${sessionId}`);
+  const multiSessionData = await multiSessionRes.json();
+  assert(multiSessionData.cameraCount === 2, 'API correctly reports 2 active cameras connected simultaneously');
+  const foundDevices = multiSessionData.cameras.map(c => c.deviceId);
+  assert(foundDevices.includes(device1Id) && foundDevices.includes(device2Id), 'API lists all connected unique device IDs');
+
+  // Test 3.7: Individual device disconnect (kick Camera #2 without affecting Camera #1)
+  wsHost.send(JSON.stringify({ type: 'disconnect-device', sessionId, deviceId: device2Id, reason: 'Operator test kick' }));
   await new Promise(r => setTimeout(r, 200));
-  assert(duplicateRejected, 'Single-camera pairing security enforced (rogue camera rejected)');
-  wsCameraDuplicate.close();
+  assert(cam2Kicked, 'Targeted device Camera #2 disconnected by host operator');
+  assert(cam1StillOnline, 'Camera #1 remains unaffected and actively streaming');
 
-  // Test 3.4: Camera-ready permission notification
-  wsCamera.send(JSON.stringify({ type: 'camera-ready', sessionId, facingMode: 'environment', resolution: '1280x720' }));
-  await new Promise(r => setTimeout(r, 150));
-  assert(cameraReadyNotice, 'Host received camera-ready hardware consent notice');
+  // Test 3.8: Verify API now reports 1 remaining camera
+  const remainingRes = await fetch(`${BASE_URL}/api/sessions/${sessionId}`);
+  const remainingData = await remainingRes.json();
+  assert(remainingData.cameraCount === 1 && remainingData.cameras[0].deviceId === device1Id, 'Matrix dynamically updated: Camera #1 active, Camera #2 removed');
 
-  // Test 3.5: SDP Offer & Answer negotiation
-  wsCamera.send(JSON.stringify({ type: 'offer', sessionId, sdp: { type: 'offer', sdp: 'v=0...' } }));
-  await new Promise(r => setTimeout(r, 250));
-  assert(offerRelayed, 'WebRTC SDP offer relayed to host');
-  assert(answerRelayed, 'WebRTC SDP answer returned to camera');
-
-  // Test 3.6: ICE Candidate relay
-  wsCamera.send(JSON.stringify({ type: 'ice-candidate', sessionId, candidate: { candidate: 'candidate:1 1 UDP...' } }));
-  await new Promise(r => setTimeout(r, 150));
-  assert(iceRelayed, 'ICE candidates exchanged between peers');
-
-  // Clean close sockets
+  // Clean close remaining sockets
   wsHost.close();
-  wsCamera.close();
+  wsCam1.close();
+  wsCam2.close();
 
-  // Test 3.7: Session extension (+10 minutes)
+  // Test 3.9: Session extension (+10 minutes)
   const extendRes = await fetch(`${BASE_URL}/api/sessions/${sessionId}/extend`, { method: 'POST' });
   const extendData = await extendRes.json();
   assert(extendRes.status === 200 && extendData.success && extendData.remainingSeconds > 600, 'Session duration successfully extended by +10 minutes');

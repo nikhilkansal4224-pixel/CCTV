@@ -26,9 +26,16 @@
       </div>
     </div>
 
-    <div class="mobile-live-pill" id="mobileStatusIndicator">
-      <span class="status-dot waiting" id="mobileStatusDot"></span>
-      <span id="mobileStatusText">INITIALIZING</span>
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <div class="mobile-device-pill" id="mobileDeviceIdBadge" title="Unique Device ID">
+        <span class="badge-label">ID</span>
+        <span id="headerDeviceId" style="font-family: var(--font-mono); font-weight: 700; color: #ffffff;">...</span>
+      </div>
+
+      <div class="mobile-live-pill" id="mobileStatusIndicator">
+        <span class="status-dot waiting" id="mobileStatusDot"></span>
+        <span id="mobileStatusText">INITIALIZING</span>
+      </div>
     </div>
   </header>
 
@@ -36,6 +43,14 @@
   <main class="camera-viewfinder">
     <!-- Local preview feed -->
     <video id="cameraPreviewVideo" class="camera-preview-video" autoplay playsinline muted></video>
+
+    <!-- In-Stream Device Watermark HUD -->
+    <div class="viewfinder-device-hud" id="viewfinderDeviceHud" style="display: none;">
+      <span class="hud-dot"></span>
+      <span id="viewfinderDeviceId">CAM-XXXX</span>
+      <span style="color: var(--text-tertiary);">•</span>
+      <span id="viewfinderDeviceName">Front Door</span>
+    </div>
 
     <!-- Initial Permission & User Consent Modal -->
     <div class="permission-overlay" id="permissionOverlay">
@@ -48,8 +63,26 @@
 
         <h1 class="permission-title">Camera Access Request</h1>
         <p class="permission-text">
-          A paired monitor is requesting permission to access your device's camera for a temporary live session.
+          A paired monitor is requesting permission to access this device as a live surveillance camera.
         </p>
+
+        <!-- Unique Device ID & Hardware Profile Box -->
+        <div class="device-identity-card">
+          <div class="device-identity-header">
+            <div>
+              <span class="device-identity-label">Hardware Type & ID</span>
+              <div class="detected-device-badge" id="detectedDeviceBadge" style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.25rem; font-size: 0.78rem; color: #ffffff;">
+                <span id="detectedIcon" style="font-size: 1rem;">💻</span>
+                <span id="detectedLabel" style="font-weight: 600;">Detecting device...</span>
+              </div>
+            </div>
+            <span class="device-id-code" id="deviceIdDisplay">CAM-XXXX</span>
+          </div>
+          <div style="margin-top: 0.75rem;">
+            <label class="input-label" for="deviceNameInput" style="font-size: 0.72rem;">Camera Label / Location</label>
+            <input type="text" id="deviceNameInput" class="custom-input" placeholder="e.g. Front Door, Living Room, Laptop Webcam" maxlength="32" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; margin-top: 0.25rem;">
+          </div>
+        </div>
 
         <!-- Privacy & Security Guarantee -->
         <div class="consent-notice-box">
@@ -66,14 +99,15 @@
 
         <div id="errorNotice" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; font-size: 0.82rem; padding: 0.75rem; border-radius: var(--radius-sm); margin-bottom: 1.25rem;"></div>
 
-        <!-- Camera Device Options -->
+        <!-- Camera Device Options (Dynamic based on hardware detected) -->
         <div class="device-options-group">
           <div>
-            <label class="input-label" for="facingSelect">Camera Lens Source</label>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <label class="input-label" for="facingSelect">Available Camera Sensor</label>
+              <span id="camCountBadge" style="font-size: 0.68rem; font-family: var(--font-mono); color: var(--text-tertiary);">Detecting...</span>
+            </div>
             <select id="facingSelect" class="custom-select" style="margin-top: 0.35rem;">
-              <option value="environment" selected>Back Camera (Main Sensor)</option>
-              <option value="user">Front Camera (Selfie / Ultra-wide)</option>
-              <option value="simulator">Virtual CCTV Test Pattern (No Hardware Required)</option>
+              <option value="detecting">Detecting hardware sensors...</option>
             </select>
           </div>
 
@@ -85,11 +119,13 @@
             </select>
           </div>
 
-          <div style="margin-top: 0.25rem;">
-            <label class="checkbox-label" style="font-size: 0.8rem;">
+          <!-- Microphone Hardware Detection Container -->
+          <div id="micContainer" style="margin-top: 0.35rem; padding-top: 0.5rem; border-top: 1px solid var(--border-light);">
+            <label class="checkbox-label" id="micCheckboxLabel" style="font-size: 0.8rem;">
               <input type="checkbox" id="micAudioToggle">
-              <span>Transmit Microphone Audio to Host</span>
+              <span id="micLabelText">Transmit Microphone Audio to Host</span>
             </label>
+            <div id="detectedMicInfo" style="font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-tertiary); margin-top: 0.25rem; margin-left: 1.5rem;">Checking audio input...</div>
           </div>
         </div>
 
@@ -111,7 +147,7 @@
     <!-- Active Viewfinder Floating Action Bar -->
     <div class="mobile-controls-bar" id="streamingControls" style="display: none;">
       <!-- Switch Camera Lens Button -->
-      <button class="cam-round-btn" id="btnFlipCamera" title="Flip Camera Front/Back">
+      <button class="cam-round-btn" id="btnFlipCamera" style="display: none;" title="Flip Camera Front/Back">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
@@ -136,8 +172,8 @@
         </svg>
       </button>
 
-      <!-- End Session Button -->
-      <button class="cam-round-btn danger" id="btnMobileEndSession" title="End Session Immediately">
+      <!-- End This Camera Session Only Button -->
+      <button class="cam-round-btn danger" id="btnMobileEndSession" title="Disconnect This Camera Only">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>

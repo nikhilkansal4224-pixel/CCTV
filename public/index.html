@@ -67,41 +67,40 @@
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="8" />
             </svg>
-            <span>REMOTE CAMERA FEED</span>
+            <span id="feedTitleText">SURVEILLANCE MATRIX</span>
           </div>
+          <span class="device-count-pill" id="cameraCountBadge">0 Devices</span>
         </div>
 
-        <div class="hud-telemetry">
-          <div class="hud-item">RES: <strong id="hudRes">--</strong></div>
-          <div class="hud-item">FPS: <strong id="hudFps">-- fps</strong></div>
-          <div class="hud-item">RATE: <strong id="hudBitrate">-- kbps</strong></div>
-          <div class="hud-item">RTT: <strong id="hudLatency">-- ms</strong></div>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="grid-mode-selector" id="gridModeSelector">
+            <button class="grid-mode-btn active" id="btnModeGrid" title="Multi-Camera Grid">
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+              <span>Grid View</span>
+            </button>
+            <button class="grid-mode-btn" id="btnModeFocus" title="Focus Single Camera">
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+              <span>Focus</span>
+            </button>
+          </div>
+
+          <div class="hud-telemetry">
+            <div class="hud-item">CAMERAS: <strong id="hudTotalCam">0</strong></div>
+            <div class="hud-item">LIVE: <strong id="hudActiveStream">0</strong></div>
+          </div>
         </div>
       </div>
 
       <!-- Video Display Stage -->
       <div class="video-stage" id="videoStage">
-        <!-- Live Remote Stream -->
-        <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+        <!-- Multi-Camera Grid Container -->
+        <div class="camera-grid" id="cameraGrid"></div>
 
-        <!-- Viewport HUD & Reticle -->
-        <div class="viewport-reticle" id="viewportReticle">
-          <div class="reticle-corner tl"></div>
-          <div class="reticle-corner tr"></div>
-          <div class="reticle-corner bl"></div>
-          <div class="reticle-corner br"></div>
-          <div class="reticle-center"></div>
-        </div>
-
-        <div class="viewport-timestamp" id="liveTimestamp">2026-10-18 22:30:00 UTC</div>
-        <div class="viewport-security-tag">
-          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-          DTLS-SRTP 256
-        </div>
-
-        <!-- Standby Waiting Graphic -->
+        <!-- Standby Waiting Graphic (Active when 0 cameras) -->
         <div class="standby-overlay" id="standbyOverlay">
           <div class="radar-loader">
             <div class="radar-core">
@@ -110,9 +109,9 @@
               </svg>
             </div>
           </div>
-          <h2 class="standby-title">Awaiting Camera Pairing</h2>
+          <h2 class="standby-title">Awaiting Camera Connections</h2>
           <p class="standby-subtitle">
-            Scan the temporary QR code with any smartphone or secondary device to stream live video to this screen.
+            Scan the temporary QR code with <strong>one or multiple smartphones or secondary devices</strong> to stream live multi-angle video to this matrix.
           </p>
 
           <div class="step-checklist">
@@ -122,7 +121,7 @@
             </div>
             <div class="step-item" id="step2">
               <span class="step-num">2</span>
-              <span>Device Paired</span>
+              <span>Devices Paired</span>
             </div>
             <div class="step-item" id="step3">
               <span class="step-num">3</span>
@@ -130,7 +129,7 @@
             </div>
             <div class="step-item" id="step4">
               <span class="step-num">4</span>
-              <span>Encrypted Live Stream</span>
+              <span>Encrypted Multi-Stream</span>
             </div>
           </div>
         </div>
@@ -276,6 +275,20 @@
             </button>
           </div>
         </div>
+      </div>
+
+      <!-- Live Connected Devices Roster -->
+      <div class="roster-card" id="connectedRosterCard" style="display: none;">
+        <div class="roster-header">
+          <div style="display: flex; align-items: center; gap: 0.45rem;">
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+            </svg>
+            <span class="roster-title">Paired Devices</span>
+          </div>
+          <span class="roster-count" id="rosterCountBadge">0 Online</span>
+        </div>
+        <div class="roster-list" id="rosterList"></div>
       </div>
 
       <!-- Security & Privacy Guarantee Card -->

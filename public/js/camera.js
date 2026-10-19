@@ -12,6 +12,14 @@ let torchTrack = null;
 let currentZoom = 1.0;
 let isMicMuted = false;
 
+// Generate or restore persistent unique device ID
+let deviceId = sessionStorage.getItem('sentinel_device_id');
+if (!deviceId) {
+  deviceId = 'CAM-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+  sessionStorage.setItem('sentinel_device_id', deviceId);
+}
+let deviceName = sessionStorage.getItem('sentinel_device_name') || '';
+
 // UI Elements
 const permissionOverlay = document.getElementById('permissionOverlay');
 const btnAllowStart = document.getElementById('btnAllowStart');
@@ -31,6 +39,18 @@ const zoomLabel = document.getElementById('zoomLabel');
 const btnMobileEndSession = document.getElementById('btnMobileEndSession');
 const streamingControls = document.getElementById('streamingControls');
 const errorNotice = document.getElementById('errorNotice');
+
+// Multi-device identity UI elements
+const headerDeviceId = document.getElementById('headerDeviceId');
+const deviceIdDisplay = document.getElementById('deviceIdDisplay');
+const deviceNameInput = document.getElementById('deviceNameInput');
+const viewfinderDeviceHud = document.getElementById('viewfinderDeviceHud');
+const viewfinderDeviceId = document.getElementById('viewfinderDeviceId');
+const viewfinderDeviceName = document.getElementById('viewfinderDeviceName');
+
+if (headerDeviceId) headerDeviceId.textContent = deviceId;
+if (deviceIdDisplay) deviceIdDisplay.textContent = deviceId;
+if (deviceNameInput && deviceName) deviceNameInput.value = deviceName;
 
 if (sessionTokenDisplay) {
   sessionTokenDisplay.textContent = sessionId || 'INVALID';
@@ -195,6 +215,8 @@ function connectWebSocket() {
       type: 'join',
       sessionId,
       role: 'camera',
+      deviceId,
+      deviceName: deviceName || `Camera ${deviceId}`,
     }));
     updateStatus('waiting', 'CONNECTED TO HOST');
   };
@@ -209,7 +231,13 @@ function connectWebSocket() {
 
     switch (msg.type) {
       case 'joined':
-        console.log('[Camera] Successfully paired with session');
+        console.log('[Camera] Successfully paired with session as', msg.deviceId || deviceId);
+        if (msg.deviceId) {
+          deviceId = msg.deviceId;
+          sessionStorage.setItem('sentinel_device_id', deviceId);
+          if (headerDeviceId) headerDeviceId.textContent = deviceId;
+          if (deviceIdDisplay) deviceIdDisplay.textContent = deviceId;
+        }
         break;
 
       case 'answer':
@@ -227,6 +255,10 @@ function connectWebSocket() {
             console.error('Error adding ICE candidate:', e);
           }
         }
+        break;
+
+      case 'device-kicked':
+        handleSessionEnded(`Disconnected by host operator: ${msg.reason || 'Kicked from grid'}`);
         break;
 
       case 'session-extended':
@@ -308,14 +340,31 @@ async function handleUserConsentAndStart() {
     permissionOverlay.style.display = 'none';
     streamingControls.style.display = 'flex';
 
+    // Store chosen device name
+    if (deviceNameInput && deviceNameInput.value.trim()) {
+      deviceName = deviceNameInput.value.trim();
+      sessionStorage.setItem('sentinel_device_name', deviceName);
+    }
+    if (!deviceName) {
+      deviceName = `Camera ${deviceId}`;
+    }
+
+    if (viewfinderDeviceHud) {
+      viewfinderDeviceHud.style.display = 'flex';
+      if (viewfinderDeviceId) viewfinderDeviceId.textContent = deviceId;
+      if (viewfinderDeviceName) viewfinderDeviceName.textContent = deviceName;
+    }
+
     updateStatus('live', 'LIVE STREAMING');
-    window.showToast('Camera live: streaming to host');
+    window.showToast(`Camera live: streaming as [${deviceId}]`);
 
     // Notify host that camera is ready
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'camera-ready',
         sessionId,
+        deviceId,
+        deviceName,
         facingMode: sourceChoice,
         resolution: `${width}x${height}`,
         hasAudio: !!audioTrack,
@@ -395,6 +444,7 @@ async function startPeerConnection() {
       ws.send(JSON.stringify({
         type: 'ice-candidate',
         sessionId,
+        deviceId,
         candidate: event.candidate,
       }));
     }
@@ -419,6 +469,7 @@ async function startPeerConnection() {
     ws.send(JSON.stringify({
       type: 'offer',
       sessionId,
+      deviceId,
       sdp: pc.localDescription,
     }));
   }
