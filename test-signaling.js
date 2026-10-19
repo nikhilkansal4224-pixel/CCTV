@@ -3,10 +3,32 @@ const WebSocket = require('ws');
 async function testSignaling() {
   console.log('--- Starting WebRTC Signaling & Session Lifecycle Test ---');
   
-  // 1. Create Session
-  const createRes = await fetch('http://localhost:3000/api/sessions/create?host=localhost&protocol=http', { method: 'POST' });
+  // 1. Check unauthorized rejection
+  const unauthRes = await fetch('http://localhost:3000/api/sessions/create?host=localhost&protocol=http', { method: 'POST' });
+  if (unauthRes.status === 401) {
+    console.log('✓ Unauthorized request correctly rejected with 401');
+  } else {
+    throw new Error(`Expected 401 for unauthenticated request, got ${unauthRes.status}`);
+  }
+
+  // 2. Authenticate as Operator
+  const loginRes = await fetch('http://localhost:3000/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'password123', remember: true }),
+  });
+  const loginData = await loginRes.json();
+  if (!loginRes.ok) throw new Error('Login failed: ' + loginData.error);
+  const cookieHeader = loginRes.headers.get('set-cookie');
+  console.log('✓ Operator Authenticated:', loginData.user.username, `(${loginData.user.role})`);
+
+  // 3. Create Session with Auth Cookie
+  const createRes = await fetch('http://localhost:3000/api/sessions/create?host=localhost&protocol=http', {
+    method: 'POST',
+    headers: { 'Cookie': cookieHeader || `sentinel_token=${loginData.token}` },
+  });
   const session = await createRes.json();
-  console.log('✓ Session Created:', session.sessionId, 'Expires in:', session.ttlSeconds, 's');
+  console.log('✓ Session Created by Operator:', session.operator, '| Session ID:', session.sessionId);
 
   const wsHost = new WebSocket('ws://localhost:3000');
   const wsCamera = new WebSocket('ws://localhost:3000');

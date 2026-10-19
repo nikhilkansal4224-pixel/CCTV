@@ -47,6 +47,12 @@ const btnAspect = document.getElementById('btnAspect');
 const btnToggleReticle = document.getElementById('btnToggleReticle');
 const videoStage = document.getElementById('videoStage');
 
+// User Profile Elements
+const userNameEl = document.getElementById('userName');
+const userRoleEl = document.getElementById('userRole');
+const userAvatarEl = document.getElementById('userAvatar');
+const btnLogout = document.getElementById('btnLogout');
+
 // Clock watermark
 setInterval(() => {
   if (liveTimestamp) {
@@ -55,8 +61,34 @@ setInterval(() => {
   }
 }, 1000);
 
+async function checkAuthAndProfile() {
+  try {
+    const res = await fetch('/api/auth/me');
+    if (!res.ok) {
+      window.location.href = '/login.html?returnTo=' + encodeURIComponent(window.location.pathname);
+      return false;
+    }
+    const data = await res.json();
+    if (data.user) {
+      if (userNameEl) userNameEl.textContent = data.user.displayName || data.user.username;
+      if (userRoleEl) userRoleEl.textContent = data.user.role || 'Operator';
+      if (userAvatarEl) {
+        const initial = (data.user.displayName || data.user.username || 'A')[0].toUpperCase();
+        userAvatarEl.textContent = initial;
+      }
+      return true;
+    }
+  } catch (err) {
+    console.warn('Auth check error:', err);
+  }
+  window.location.href = '/login.html';
+  return false;
+}
+
 // Initialize Dashboard
 async function initHost() {
+  const isAuthed = await checkAuthAndProfile();
+  if (!isAuthed) return;
   await loadNetworkInfo();
   await createNewSession();
   setupEventListeners();
@@ -475,6 +507,18 @@ function setupEventListeners() {
       selectedProtocol = networkProtocolSelect.value;
       createNewSession();
       showToast(`Switched protocol to ${selectedProtocol.toUpperCase()}`);
+    });
+  }
+
+  // Sign out button
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async () => {
+      if (confirm('Are you sure you want to sign out of the Sentinel Gateway?')) {
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' });
+        } catch (e) {}
+        window.location.href = '/login.html';
+      }
     });
   }
 }

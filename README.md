@@ -8,6 +8,7 @@ Built with a **dark-and-white cyber-precision aesthetic**, zero-trust privacy ar
 
 ## Key Features
 
+- **Operator Authentication Gate**: Secure PBKDF2 SHA-512 clearance portal with session tokens in HTTP-only cookies, protecting the Host Monitor from unauthorized access.
 - **Large Prominent QR Code**: Crisp SVG QR code generated with ephemeral session tokens.
 - **Explicit Consent**: Zero camera activation without physical interaction and explicit tap on `"Allow & Start Camera"`. Standard browser permissions (`navigator.mediaDevices.getUserMedia`) are strictly respected.
 - **Peer-to-Peer Encryption**: Direct end-to-end video streaming between devices using WebRTC DTLS/SRTP 256-bit encryption. Zero video frames are stored or analyzed on any cloud server.
@@ -21,12 +22,13 @@ Built with a **dark-and-white cyber-precision aesthetic**, zero-trust privacy ar
 
 ## How It Works
 
-1. **Session Generation**: The host device generates a unique, temporary session token with a prominent QR code and countdown timer.
-2. **QR Code Scanning**: The user scans the QR code using any smartphone or secondary device.
-3. **Camera Access Request**: The device opens a secure page (`/camera.html?session=<id>`) displaying the host's request and clear privacy guarantees.
-4. **User Consent**: The device owner selects their preferred lens (Front/Rear) and resolution, then explicitly clicks **"Allow & Start Camera"**.
-5. **Encrypted WebRTC Stream**: Once permission is granted, a direct P2P connection is negotiated via WebSocket signaling and streams live video to the host monitor.
-6. **Session Termination**: Either device can click **"End Session"** at any time to instantly cut camera hardware power and tear down the connection.
+1. **Operator Clearance**: Log in via `/login.html` with your operator credentials (or register a new profile).
+2. **Session Generation**: The authenticated host device generates a unique, temporary session token with a prominent QR code and countdown timer.
+3. **QR Code Scanning**: The user scans the QR code using any smartphone or secondary device (no password needed on the phone; the single-use token acts as temporary clearance).
+4. **Camera Access Request**: The device opens a secure page (`/camera.html?session=<id>`) displaying the host's request and clear privacy guarantees.
+5. **User Consent**: The device owner selects their preferred lens (Front/Rear) and resolution, then explicitly clicks **"Allow & Start Camera"**.
+6. **Encrypted WebRTC Stream**: Once permission is granted, a direct P2P connection is negotiated via WebSocket signaling and streams live video to the host monitor.
+7. **Session Termination**: Either device can click **"End Session"** at any time to instantly cut camera hardware power and tear down the connection.
 
 ---
 
@@ -46,8 +48,12 @@ The system will start two listeners:
 - **HTTP**: `http://localhost:3000` (for local testing)
 - **HTTPS**: `https://<YOUR-LAN-IP>:3443` (for mobile devices scanning the QR code over Wi-Fi)
 
-### 3. Open the Host Dashboard
-Open `http://localhost:3000` (or `https://localhost:3443`) in your desktop browser.
+### 3. Log In to the Host Dashboard
+Open `http://localhost:3000` (or `https://localhost:3443`). You will be greeted by the **Sentinel Clearance Portal**.
+
+- **Default Username**: `admin`
+- **Default Password**: `password123`
+- *Or click "Register Operator" to enroll a new profile.*
 
 ### 4. Connect a Camera
 - **Using a Smartphone**: Point your phone camera at the QR code on screen. Open the link in Safari or Chrome, review the permissions, and tap **"Allow & Start Camera"**.

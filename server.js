@@ -5,12 +5,22 @@ const https = require('https');
 const crypto = require('crypto');
 const os = require('os');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const selfsigned = require('selfsigned');
+const auth = require('./auth');
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
+
+// Protected Host Dashboard Route (requires authentication)
+app.get(['/', '/index.html'], auth.requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Serve public static assets (login.html, camera.html, css, js)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Port configuration
@@ -124,6 +134,77 @@ function cleanupSessions() {
 }
 setInterval(cleanupSessions, 20 * 1000);
 
+// --- Authentication Endpoints ---
+
+// Operator Login
+app.post('/api/auth/login', (req, res) => {
+  const { username, password, remember } = req.body;
+  const user = auth.authenticate(username, password);
+
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid operator credentials' });
+  }
+
+  // 7 days if remember, otherwise 24 hours
+  const maxAge = remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const token = auth.generateToken(user, maxAge);
+
+  res.cookie('sentinel_token', token, {
+    httpOnly: true,
+    secure: req.secure || req.protocol === 'https',
+    sameSite: 'lax',
+    maxAge,
+    path: '/',
+  });
+
+  res.json({
+    success: true,
+    user,
+    token,
+  });
+});
+
+// Operator Registration
+app.post('/api/auth/register', (req, res) => {
+  const { username, password, role, displayName } = req.body;
+  try {
+    const user = auth.register(username, password, role, displayName);
+    const maxAge = 24 * 60 * 60 * 1000;
+    const token = auth.generateToken(user, maxAge);
+
+    res.cookie('sentinel_token', token, {
+      httpOnly: true,
+      secure: req.secure || req.protocol === 'https',
+      sameSite: 'lax',
+      maxAge,
+      path: '/',
+    });
+
+    res.status(201).json({
+      success: true,
+      user,
+      token,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Operator Logout
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('sentinel_token', { path: '/' });
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Current Authenticated Operator Info
+app.get('/api/auth/me', auth.optionalAuth, (req, res) => {
+  if (req.user) {
+    res.json({ authenticated: true, user: req.user });
+  } else {
+    res.status(401).json({ authenticated: false, user: null });
+  }
+});
+
 // --- REST Endpoints ---
 
 // Get network information (local IP, all available IPs, ports, URLs)
@@ -145,9 +226,10 @@ app.get('/api/network-info', (req, res) => {
   });
 });
 
-// Create new temporary session
-app.post('/api/sessions/create', (req, res) => {
+// Create new temporary session (requires authenticated operator)
+app.post('/api/sessions/create', auth.requireAuth, (req, res) => {
   const session = createSession();
+  session.operator = req.user.username;
   const host = req.query.host || getLocalIp(req);
   const preferProtocol = req.query.protocol || (req.secure ? 'https' : 'http');
   const port = preferProtocol === 'https' ? HTTPS_PORT : HTTP_PORT;
@@ -163,6 +245,7 @@ app.post('/api/sessions/create', (req, res) => {
     status: session.status,
     host,
     protocol: preferProtocol,
+    operator: req.user.username,
   });
 });
 
