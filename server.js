@@ -97,9 +97,9 @@ async function getOrGenerateCert() {
 }
 
 // In-Memory Session Storage
-// sessionId -> { id, createdAt, expiresAt, status: 'waiting'|'active'|'ended', hostWs, cameras: Map<deviceId, { deviceId, deviceName, ws, status, joinedAt }> }
+// sessionId -> { id, createdAt, expiresAt, status: 'waiting'|'active'|'ended', hostWs, sleepTimer, cameras: Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, sleepTimer }> }
 const sessions = new Map();
-const SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours max session lifetime (no forced 10-minute cutoff)
 
 function createSession() {
   const id = crypto.randomBytes(6).toString('hex'); // 12-char hex ID
@@ -110,7 +110,8 @@ function createSession() {
     expiresAt: now + SESSION_TTL_MS,
     status: 'waiting',
     hostWs: null,
-    cameras: new Map(), // Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, facingMode, resolution }>
+    sleepTimer: { active: false, expiresAt: null, durationMinutes: null },
+    cameras: new Map(), // Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, facingMode, resolution, sleepTimer }>
   };
   sessions.set(id, session);
   return session;
@@ -119,7 +120,65 @@ function createSession() {
 function cleanupSessions() {
   const now = Date.now();
   for (const [id, session] of sessions.entries()) {
-    if (session.expiresAt <= now || session.status === 'ended') {
+    // 1. Check Individual Device Sleep Timers
+    if (session.cameras) {
+      for (const [devId, cam] of session.cameras.entries()) {
+        if (cam.sleepTimer && cam.sleepTimer.active && cam.sleepTimer.expiresAt && cam.sleepTimer.expiresAt <= now) {
+          console.log(`[SleepTimer] Device ${devId} sleep timer expired. Disconnecting device.`);
+          const sleepNotice = JSON.stringify({
+            type: 'device-sleep',
+            sessionId: id,
+            deviceId: devId,
+            reason: 'Individual sleep timer reached',
+          });
+          if (cam.ws && cam.ws.readyState === 1) {
+            cam.ws.send(sleepNotice);
+            cam.ws.close();
+          }
+          session.cameras.delete(devId);
+          if (session.cameras.size === 0) {
+            session.status = 'waiting';
+          }
+          if (session.hostWs && session.hostWs.readyState === 1) {
+            session.hostWs.send(JSON.stringify({
+              type: 'camera-disconnected',
+              sessionId: id,
+              deviceId: devId,
+              reason: 'Sleep timer reached',
+              totalCameras: session.cameras.size,
+            }));
+          }
+        }
+      }
+    }
+
+    // 2. Check Master / Global Sleep Timer (All Cameras at once)
+    if (session.sleepTimer && session.sleepTimer.active && session.sleepTimer.expiresAt && session.sleepTimer.expiresAt <= now) {
+      console.log(`[SleepTimer] Master sleep timer expired for session ${id}. Putting all cameras to sleep.`);
+      session.sleepTimer.active = false;
+      const allSleepNotice = JSON.stringify({
+        type: 'all-sleep',
+        sessionId: id,
+        reason: 'Master sleep timer reached',
+      });
+
+      if (session.hostWs && session.hostWs.readyState === 1) {
+        session.hostWs.send(allSleepNotice);
+      }
+      if (session.cameras) {
+        for (const [devId, cam] of session.cameras.entries()) {
+          if (cam.ws && cam.ws.readyState === 1) {
+            cam.ws.send(allSleepNotice);
+            cam.ws.close();
+          }
+        }
+        session.cameras.clear();
+      }
+      session.status = 'waiting';
+    }
+
+    // 3. Stale session cleanup (only if ended or past 24-hour lifetime)
+    if (session.status === 'ended' || (session.expiresAt && session.expiresAt <= now)) {
       const expiredMsg = JSON.stringify({ type: 'session-expired', sessionId: id });
       if (session.hostWs && session.hostWs.readyState === 1) {
         session.hostWs.send(expiredMsg);
@@ -137,43 +196,47 @@ function cleanupSessions() {
     }
   }
 }
-setInterval(cleanupSessions, 20 * 1000);
+setInterval(cleanupSessions, 1000); // 1-second cadence for responsive sleep timers
 
 // --- Authentication Endpoints ---
 
-// Operator Login
-app.post('/api/auth/login', (req, res) => {
-  const { username, password, remember } = req.body;
-  const user = auth.authenticate(username, password);
+// Operator Login (MongoDB + Local Fallback)
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password, remember } = req.body;
+    const user = await auth.authenticate(username, password);
 
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid operator credentials' });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid operator credentials' });
+    }
+
+    // 7 days if remember, otherwise 24 hours
+    const maxAge = remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const token = auth.generateToken(user, maxAge);
+
+    res.cookie('sentinel_token', token, {
+      httpOnly: true,
+      secure: req.secure || req.protocol === 'https',
+      sameSite: 'lax',
+      maxAge,
+      path: '/',
+    });
+
+    res.json({
+      success: true,
+      user,
+      token,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Authentication processing error' });
   }
-
-  // 7 days if remember, otherwise 24 hours
-  const maxAge = remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  const token = auth.generateToken(user, maxAge);
-
-  res.cookie('sentinel_token', token, {
-    httpOnly: true,
-    secure: req.secure || req.protocol === 'https',
-    sameSite: 'lax',
-    maxAge,
-    path: '/',
-  });
-
-  res.json({
-    success: true,
-    user,
-    token,
-  });
 });
 
-// Operator Registration
-app.post('/api/auth/register', (req, res) => {
+// Operator Registration (MongoDB + Local Fallback)
+app.post('/api/auth/register', async (req, res) => {
   const { username, password, role, displayName } = req.body;
   try {
-    const user = auth.register(username, password, role, displayName);
+    const user = await auth.register(username, password, role, displayName);
     const maxAge = 24 * 60 * 60 * 1000;
     const token = auth.generateToken(user, maxAge);
 
@@ -193,6 +256,11 @@ app.post('/api/auth/register', (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// Database & Persistence Health Status
+app.get('/api/db/status', (req, res) => {
+  res.json(require('./db').getStatus());
 });
 
 // Operator Logout
@@ -271,13 +339,19 @@ app.get('/api/sessions/:id', (req, res) => {
     deviceId: c.deviceId,
     deviceName: c.deviceName,
     status: c.status,
+    sleepTimer: c.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
   })) : [];
+
+  const sleepRemaining = (session.sleepTimer && session.sleepTimer.active && session.sleepTimer.expiresAt)
+    ? Math.max(0, Math.floor((session.sleepTimer.expiresAt - now) / 1000))
+    : null;
 
   res.json({
     sessionId: session.id,
     status: session.status,
     expiresAt: session.expiresAt,
-    remainingSeconds: Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
+    remainingSeconds: sleepRemaining !== null ? sleepRemaining : Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
+    sleepTimer: session.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
     cameraCount: cameraList.length,
     isPaired: cameraList.length > 0,
     cameras: cameraList,
@@ -312,7 +386,7 @@ app.get('/api/sessions/:id/qr', async (req, res) => {
   }
 });
 
-// Explicitly terminate whole session (Host operator only)
+// Explicitly terminate session
 app.post('/api/sessions/:id/end', (req, res) => {
   const session = sessions.get(req.params.id);
   if (session) {
@@ -333,35 +407,96 @@ app.post('/api/sessions/:id/end', (req, res) => {
   res.json({ success: true, message: 'Session terminated' });
 });
 
-// Disconnect/leave a single camera device (keeps session and all other cameras active)
-app.post('/api/sessions/:id/devices/:deviceId/leave', (req, res) => {
+// Explicitly disconnect a single camera device (keeps session and other cameras alive)
+app.post('/api/sessions/:id/cameras/:deviceId/end', (req, res) => {
   const session = sessions.get(req.params.id);
-  const deviceId = req.params.deviceId;
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' });
-  }
-
-  if (session.cameras && session.cameras.has(deviceId)) {
-    const cam = session.cameras.get(deviceId);
+  if (session && session.cameras && session.cameras.has(req.params.deviceId)) {
+    const cam = session.cameras.get(req.params.deviceId);
     if (cam.ws && cam.ws.readyState === 1) {
-      try { cam.ws.close(); } catch (e) {}
+      cam.ws.send(JSON.stringify({
+        type: 'device-kicked',
+        sessionId: session.id,
+        deviceId: req.params.deviceId,
+        reason: 'Device ended connection',
+      }));
+      cam.ws.close();
     }
-    session.cameras.delete(deviceId);
-    if (session.cameras.size === 0 && session.status !== 'ended') {
+    session.cameras.delete(req.params.deviceId);
+    if (session.cameras.size === 0) {
       session.status = 'waiting';
     }
-
     if (session.hostWs && session.hostWs.readyState === 1) {
       session.hostWs.send(JSON.stringify({
         type: 'camera-disconnected',
         sessionId: session.id,
-        deviceId,
+        deviceId: req.params.deviceId,
         totalCameras: session.cameras.size,
       }));
     }
   }
+  res.json({ success: true, message: 'Device disconnected' });
+});
 
-  res.json({ success: true, message: `Device ${deviceId} left session` });
+// --- Serverless / Vercel HTTP Signaling Endpoints (Fallback when WebSocket unavailable) ---
+app.post('/api/signaling/send', (req, res) => {
+  const { sessionId, target, sender, message } = req.body;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  if (!session.signalingMessages) {
+    session.signalingMessages = [];
+  }
+
+  const packet = {
+    id: crypto.randomBytes(4).toString('hex'),
+    target, // 'host' | 'camera' | 'all' | deviceId
+    sender,
+    message,
+    timestamp: Date.now(),
+  };
+
+  session.signalingMessages.push(packet);
+  if (session.signalingMessages.length > 100) {
+    session.signalingMessages.shift();
+  }
+
+  // Also forward to WebSocket if open
+  if (target === 'host' && session.hostWs && session.hostWs.readyState === 1) {
+    session.hostWs.send(JSON.stringify(message));
+  } else if (session.cameras && session.cameras.has(target)) {
+    const cam = session.cameras.get(target);
+    if (cam.ws && cam.ws.readyState === 1) {
+      cam.ws.send(JSON.stringify(message));
+    }
+  }
+
+  res.json({ success: true, messageId: packet.id });
+});
+
+app.get('/api/signaling/poll', (req, res) => {
+  const { sessionId, role, deviceId, since } = req.query;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found', messages: [] });
+  }
+
+  const sinceTime = parseInt(since, 10) || 0;
+  const msgs = (session.signalingMessages || []).filter(m => {
+    if (m.timestamp <= sinceTime) return false;
+    if (role === 'host') {
+      return m.target === 'host' || m.target === 'all';
+    } else if (role === 'camera') {
+      return m.target === 'all' || m.target === 'camera' || m.target === deviceId;
+    }
+    return false;
+  });
+
+  res.json({
+    messages: msgs.map(m => m.message),
+    lastTimestamp: msgs.length > 0 ? msgs[msgs.length - 1].timestamp : sinceTime,
+  });
 });
 
 // Extend active session duration (+10 minutes)
@@ -397,6 +532,95 @@ app.post('/api/sessions/:id/extend', auth.optionalAuth, (req, res) => {
     expiresAt: session.expiresAt,
     remainingSeconds: Math.floor((session.expiresAt - Date.now()) / 1000),
   });
+});
+
+// Configure Sleep Timer:
+// target: 'all' (Master Sleep Timer) or specific deviceId (e.g. 'CAM-XXXX')
+// minutes: 0 / null (turn off) or positive number (e.g. 5, 15, 30, 60, 120)
+app.post('/api/sessions/:id/sleep-timer', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session || session.status === 'ended') {
+    return res.status(404).json({ error: 'Session not found or already ended' });
+  }
+
+  const { target, minutes } = req.body;
+  const now = Date.now();
+  const numMinutes = (minutes !== null && minutes !== undefined && !isNaN(minutes) && Number(minutes) > 0)
+    ? Number(minutes)
+    : null;
+  const active = numMinutes !== null;
+  const expiresAt = active ? now + numMinutes * 60 * 1000 : null;
+
+  if (!target || target === 'all') {
+    // Configure Master Sleep Timer for entire session / all cameras
+    session.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+
+    // Also update all currently connected cameras to sync with master timer
+    if (session.cameras) {
+      for (const cam of session.cameras.values()) {
+        cam.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+      }
+    }
+
+    const updateNotice = JSON.stringify({
+      type: 'sleep-timer-updated',
+      sessionId: session.id,
+      target: 'all',
+      sleepTimer: session.sleepTimer,
+      remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
+    });
+
+    if (session.hostWs && session.hostWs.readyState === 1) {
+      session.hostWs.send(updateNotice);
+    }
+    if (session.cameras) {
+      for (const cam of session.cameras.values()) {
+        if (cam.ws && cam.ws.readyState === 1) {
+          cam.ws.send(updateNotice);
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      target: 'all',
+      sleepTimer: session.sleepTimer,
+      remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
+    });
+  } else {
+    // Configure Individual Sleep Timer for specific deviceId
+    const deviceId = target;
+    if (session.cameras && session.cameras.has(deviceId)) {
+      const cam = session.cameras.get(deviceId);
+      cam.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+
+      const updateNotice = JSON.stringify({
+        type: 'sleep-timer-updated',
+        sessionId: session.id,
+        target: deviceId,
+        deviceId,
+        sleepTimer: cam.sleepTimer,
+        remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
+      });
+
+      if (session.hostWs && session.hostWs.readyState === 1) {
+        session.hostWs.send(updateNotice);
+      }
+      if (cam.ws && cam.ws.readyState === 1) {
+        cam.ws.send(updateNotice);
+      }
+
+      return res.json({
+        success: true,
+        target: deviceId,
+        deviceId,
+        sleepTimer: cam.sleepTimer,
+        remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
+      });
+    } else {
+      return res.status(404).json({ error: `Device ${deviceId} not found in this session` });
+    }
+  }
 });
 
 async function start() {
@@ -452,6 +676,7 @@ async function start() {
             deviceId: c.deviceId,
             deviceName: c.deviceName,
             status: c.status,
+            sleepTimer: c.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
           }));
           ws.send(JSON.stringify({
             type: 'joined',
@@ -461,6 +686,7 @@ async function start() {
             totalCameras: session.cameras.size,
             cameras: cameraList,
             hasCamera: session.cameras.size > 0,
+            sleepTimer: session.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
           }));
         } else if (role === 'camera') {
           // Unique device ID for each camera
@@ -476,12 +702,14 @@ async function start() {
           }
 
           boundDeviceId = deviceId;
+          const camSleepTimer = session.sleepTimer && session.sleepTimer.active ? { ...session.sleepTimer } : { active: false, expiresAt: null, durationMinutes: null };
           session.cameras.set(deviceId, {
             deviceId,
             deviceName,
             ws,
             status: 'paired',
             joinedAt: Date.now(),
+            sleepTimer: camSleepTimer,
           });
           session.status = 'active';
 
@@ -493,6 +721,7 @@ async function start() {
             deviceName,
             status: 'paired',
             totalCameras: session.cameras.size,
+            sleepTimer: camSleepTimer,
           }));
 
           // Notify the host monitor that a camera scanned and joined
@@ -504,6 +733,7 @@ async function start() {
               deviceName,
               totalCameras: session.cameras.size,
               timestamp: Date.now(),
+              sleepTimer: camSleepTimer,
             }));
           }
         }
@@ -622,22 +852,22 @@ async function start() {
         return;
       }
 
-      // Disconnect a specific camera device (initiated by Host or self-terminated by Device)
-      if (type === 'disconnect-device' || type === 'leave-device') {
-        const deviceId = boundRole === 'camera' ? (boundDeviceId || data.deviceId) : data.deviceId;
+      // Disconnect a specific camera device (initiated by Host)
+      if (type === 'disconnect-device') {
+        const deviceId = data.deviceId;
         if (deviceId && currentSession.cameras.has(deviceId)) {
           const cam = currentSession.cameras.get(deviceId);
-          if (cam.ws && cam.ws.readyState === 1 && boundRole !== 'camera') {
+          if (cam.ws && cam.ws.readyState === 1) {
             cam.ws.send(JSON.stringify({
               type: 'device-kicked',
               sessionId: currentSession.id,
               deviceId,
               reason: data.reason || 'Disconnected by host operator',
             }));
-            try { cam.ws.close(); } catch (e) {}
+            cam.ws.close();
           }
           currentSession.cameras.delete(deviceId);
-          if (currentSession.cameras.size === 0 && currentSession.status !== 'ended') {
+          if (currentSession.cameras.size === 0) {
             currentSession.status = 'waiting';
           }
           if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
@@ -648,20 +878,96 @@ async function start() {
               totalCameras: currentSession.cameras.size,
             }));
           }
-          if (boundRole === 'camera' && ws.readyState === 1) {
-            try { ws.close(); } catch (e) {}
+        }
+        return;
+      }
+
+      // Voluntary leave from camera device (e.g. clicking red cross on camera device)
+      if (type === 'leave-device' || (type === 'end-session' && boundRole === 'camera')) {
+        const deviceId = boundDeviceId || data.deviceId;
+        if (deviceId && currentSession.cameras.has(deviceId)) {
+          currentSession.cameras.delete(deviceId);
+          if (currentSession.cameras.size === 0) {
+            currentSession.status = 'waiting';
+          }
+          if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
+            currentSession.hostWs.send(JSON.stringify({
+              type: 'camera-disconnected',
+              sessionId: currentSession.id,
+              deviceId,
+              totalCameras: currentSession.cameras.size,
+              reason: data.reason || 'Camera device disconnected',
+            }));
           }
         }
         return;
       }
 
-      // Explicit End Entire Session request from either peer
+      // Configure Sleep Timer via WebSocket (target: 'all' or deviceId)
+      if (type === 'set-sleep-timer') {
+        const { target, minutes } = data;
+        const now = Date.now();
+        const numMinutes = (minutes !== null && minutes !== undefined && !isNaN(minutes) && Number(minutes) > 0)
+          ? Number(minutes)
+          : null;
+        const active = numMinutes !== null;
+        const expiresAt = active ? now + numMinutes * 60 * 1000 : null;
+
+        if (!target || target === 'all') {
+          currentSession.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+          if (currentSession.cameras) {
+            for (const cam of currentSession.cameras.values()) {
+              cam.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+            }
+          }
+          const updateNotice = JSON.stringify({
+            type: 'sleep-timer-updated',
+            sessionId: currentSession.id,
+            target: 'all',
+            sleepTimer: currentSession.sleepTimer,
+            remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
+          });
+          if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
+            currentSession.hostWs.send(updateNotice);
+          }
+          if (currentSession.cameras) {
+            for (const cam of currentSession.cameras.values()) {
+              if (cam.ws && cam.ws.readyState === 1) {
+                cam.ws.send(updateNotice);
+              }
+            }
+          }
+        } else {
+          const devId = target;
+          if (currentSession.cameras && currentSession.cameras.has(devId)) {
+            const cam = currentSession.cameras.get(devId);
+            cam.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+            const updateNotice = JSON.stringify({
+              type: 'sleep-timer-updated',
+              sessionId: currentSession.id,
+              target: devId,
+              deviceId: devId,
+              sleepTimer: cam.sleepTimer,
+              remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
+            });
+            if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
+              currentSession.hostWs.send(updateNotice);
+            }
+            if (cam.ws && cam.ws.readyState === 1) {
+              cam.ws.send(updateNotice);
+            }
+          }
+        }
+        return;
+      }
+
+      // Explicit End Entire Session request (Host operator terminates session for all devices)
       if (type === 'end-session') {
         currentSession.status = 'ended';
         const endNotice = JSON.stringify({
           type: 'session-ended',
           sessionId: currentSession.id,
-          reason: data.reason || 'Session ended by user',
+          reason: data.reason || 'Session ended by host operator',
         });
         if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
           currentSession.hostWs.send(endNotice);
@@ -737,7 +1043,15 @@ async function start() {
   });
 }
 
-start().catch((err) => {
-  console.error('Fatal startup error:', err);
-  process.exit(1);
-});
+// Vercel serverless export support
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  start().catch((err) => {
+    console.error('Fatal startup error:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = app;
+

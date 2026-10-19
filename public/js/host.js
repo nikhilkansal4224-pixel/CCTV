@@ -35,6 +35,17 @@ const connectedRosterCard = document.getElementById('connectedRosterCard');
 const rosterCountBadge = document.getElementById('rosterCountBadge');
 const rosterList = document.getElementById('rosterList');
 
+// Master Sleep Timer Elements
+const btnMasterSleepTimer = document.getElementById('btnMasterSleepTimer');
+const masterSleepTimerLabel = document.getElementById('masterSleepTimerLabel');
+const masterSleepTimerMenu = document.getElementById('masterSleepTimerMenu');
+const viewportSleepWidget = document.getElementById('viewportSleepWidget');
+const btnViewportSleepTrigger = document.getElementById('btnViewportSleepTrigger');
+const viewportSleepLabel = document.getElementById('viewportSleepLabel');
+
+let masterSleepTimer = { active: false, expiresAt: null, durationMinutes: null };
+let sleepTimerInterval = null;
+
 const step1 = document.getElementById('step1');
 const step2 = document.getElementById('step2');
 const step3 = document.getElementById('step3');
@@ -200,35 +211,171 @@ async function loadQrCode(sessionId) {
   }
 }
 
-function startCountdown(expiresAt) {
-  if (timerInterval) clearInterval(timerInterval);
-
-  function update() {
+function initSleepTimerTicker() {
+  if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+  sleepTimerInterval = setInterval(() => {
     const now = Date.now();
-    const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
+    updateMasterSleepTimerDisplay(now);
+    cameraPeers.forEach(peer => {
+      updateTileSleepDisplay(peer, now);
+    });
+  }, 1000);
+}
+
+function updateMasterSleepTimerDisplay(now) {
+  if (masterSleepTimer && masterSleepTimer.active && masterSleepTimer.expiresAt) {
+    const remaining = Math.max(0, Math.floor((masterSleepTimer.expiresAt - now) / 1000));
     const mins = String(Math.floor(remaining / 60)).padStart(2, '0');
     const secs = String(remaining % 60).padStart(2, '0');
-    countdownDisplay.textContent = `${mins}:${secs}`;
+    const label = `🌙 ${mins}:${secs}`;
 
-    if (btnExtendSession) {
-      if (remaining <= 120 && remaining > 0) {
-        btnExtendSession.style.display = 'inline-block';
-      } else {
-        btnExtendSession.style.display = 'none';
-      }
+    if (masterSleepTimerLabel) masterSleepTimerLabel.textContent = label;
+    if (viewportSleepLabel) viewportSleepLabel.textContent = label;
+    if (btnMasterSleepTimer) btnMasterSleepTimer.classList.add('active');
+    if (btnViewportSleepTrigger) btnViewportSleepTrigger.classList.add('active');
+
+    if (countdownDisplay) countdownDisplay.textContent = `${mins}:${secs}`;
+
+    if (masterSleepTimerMenu) {
+      const items = masterSleepTimerMenu.querySelectorAll('.sleep-menu-item');
+      items.forEach(btn => {
+        const val = btn.getAttribute('data-minutes');
+        btn.classList.toggle('active', val !== 'custom' && Number(val) === masterSleepTimer.durationMinutes);
+      });
     }
 
     if (remaining <= 0) {
-      clearInterval(timerInterval);
-      countdownDisplay.textContent = 'EXPIRED';
-      countdownDisplay.parentElement.classList.add('expired');
-      if (btnExtendSession) btnExtendSession.style.display = 'none';
-      handleSessionExpired();
+      masterSleepTimer.active = false;
+      if (masterSleepTimerLabel) masterSleepTimerLabel.textContent = 'Sleep: Off';
+      if (viewportSleepLabel) viewportSleepLabel.textContent = 'Sleep: Off';
+      if (btnMasterSleepTimer) btnMasterSleepTimer.classList.remove('active');
+      if (btnViewportSleepTrigger) btnViewportSleepTrigger.classList.remove('active');
+    }
+  } else {
+    if (masterSleepTimerLabel) masterSleepTimerLabel.textContent = 'Sleep: Off';
+    if (viewportSleepLabel) viewportSleepLabel.textContent = 'Sleep: Off';
+    if (btnMasterSleepTimer) btnMasterSleepTimer.classList.remove('active');
+    if (btnViewportSleepTrigger) btnViewportSleepTrigger.classList.remove('active');
+
+    if (masterSleepTimerMenu) {
+      const items = masterSleepTimerMenu.querySelectorAll('.sleep-menu-item');
+      items.forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-minutes') === '0');
+      });
     }
   }
+}
 
-  update();
-  timerInterval = setInterval(update, 1000);
+function updateTileSleepDisplay(peer, now) {
+  if (!peer || !peer.cardEl) return;
+  const badge = peer.cardEl.querySelector('.tile-sleep-badge');
+  const btn = peer.cardEl.querySelector('.btn-tile-sleep');
+
+  if (peer.sleepTimer && peer.sleepTimer.active && peer.sleepTimer.expiresAt) {
+    const remaining = Math.max(0, Math.floor((peer.sleepTimer.expiresAt - now) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    const txt = remaining > 60 ? `${mins}m` : `${mins}:${String(secs).padStart(2, '0')}`;
+
+    if (badge) {
+      badge.textContent = txt;
+      badge.style.display = 'block';
+    }
+    if (btn) {
+      btn.classList.add('active');
+      btn.title = `Sleep Timer: ${txt} remaining [Click to change]`;
+    }
+
+    if (remaining <= 0) {
+      peer.sleepTimer.active = false;
+      if (badge) badge.style.display = 'none';
+      if (btn) {
+        btn.classList.remove('active');
+        btn.title = `Set Sleep Timer for this Camera`;
+      }
+    }
+  } else {
+    if (badge) badge.style.display = 'none';
+    if (btn) {
+      btn.classList.remove('active');
+      btn.title = `Set Sleep Timer for this Camera`;
+    }
+  }
+}
+
+async function setMasterSleepTimer(minutes) {
+  const numMinutes = (minutes !== null && minutes !== undefined && !isNaN(minutes) && Number(minutes) > 0)
+    ? Number(minutes)
+    : null;
+  const active = numMinutes !== null;
+  const expiresAt = active ? Date.now() + numMinutes * 60 * 1000 : null;
+
+  masterSleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+  updateMasterSleepTimerDisplay(Date.now());
+
+  // Also sync locally to all peers
+  cameraPeers.forEach(peer => {
+    peer.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+    updateTileSleepDisplay(peer, Date.now());
+  });
+
+  try {
+    await fetch(`/api/sessions/${currentSessionId}/sleep-timer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'all', minutes: numMinutes }),
+    });
+  } catch (e) {}
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'set-sleep-timer',
+      sessionId: currentSessionId,
+      target: 'all',
+      minutes: numMinutes,
+    }));
+  }
+
+  showToast(active ? `Master Sleep Timer: ${numMinutes} minute${numMinutes === 1 ? '' : 's'}` : 'Master Sleep Timer turned Off');
+  logEvent('SLEEP', active ? `Master sleep timer configured: ${numMinutes}m for all devices` : 'Master sleep timer turned Off (stay awake)');
+}
+
+async function setDeviceSleepTimer(deviceId, minutes) {
+  const peer = cameraPeers.get(deviceId);
+  if (!peer) return;
+
+  const numMinutes = (minutes !== null && minutes !== undefined && !isNaN(minutes) && Number(minutes) > 0)
+    ? Number(minutes)
+    : null;
+  const active = numMinutes !== null;
+  const expiresAt = active ? Date.now() + numMinutes * 60 * 1000 : null;
+
+  peer.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+  updateTileSleepDisplay(peer, Date.now());
+
+  try {
+    await fetch(`/api/sessions/${currentSessionId}/sleep-timer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: deviceId, minutes: numMinutes }),
+    });
+  } catch (e) {}
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'set-sleep-timer',
+      sessionId: currentSessionId,
+      target: deviceId,
+      minutes: numMinutes,
+    }));
+  }
+
+  showToast(active ? `Sleep Timer for [${peer.deviceName}]: ${numMinutes}m` : `Sleep Timer disabled for [${peer.deviceName}]`);
+  logEvent('SLEEP', active ? `Sleep timer set for ${peer.deviceName} [${deviceId}]: ${numMinutes}m` : `Sleep timer turned Off for ${peer.deviceName} [${deviceId}]`);
+}
+
+function startCountdown() {
+  initSleepTimerTicker();
 }
 
 function updateStatus(state, label) {
@@ -262,6 +409,7 @@ function updateCameraMatrixCounts() {
     if (standbyOverlay) standbyOverlay.style.display = 'flex';
     if (connectedRosterCard) connectedRosterCard.style.display = 'none';
     if (btnEndSession) btnEndSession.style.display = 'none';
+    if (viewportSleepWidget) viewportSleepWidget.style.display = 'none';
     updateStatus('waiting', 'WAITING FOR CAMERAS');
     setStep(1);
     focusedDeviceId = null;
@@ -269,6 +417,7 @@ function updateCameraMatrixCounts() {
     if (standbyOverlay) standbyOverlay.style.display = 'none';
     if (connectedRosterCard) connectedRosterCard.style.display = 'block';
     if (btnEndSession) btnEndSession.style.display = 'inline-flex';
+    if (viewportSleepWidget) viewportSleepWidget.style.display = 'block';
     if (live > 0) {
       updateStatus('live', `${live} ENCRYPTED FEED${live === 1 ? '' : 'S'} LIVE`);
       setStep(4);
@@ -373,6 +522,25 @@ function getOrCreateCameraTile(deviceId, deviceName) {
           </svg>
         </button>
 
+        <!-- Individual Device Sleep Timer -->
+        <div class="tile-sleep-wrap">
+          <button class="tile-btn btn-tile-sleep" title="Sleep Timer for ${escapeHtml(deviceId)}">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+            <span class="tile-sleep-badge" style="display: none;"></span>
+          </button>
+          <div class="tile-sleep-menu" style="display: none;">
+            <div class="sleep-menu-header">Sleep Timer [${escapeHtml(deviceId)}]</div>
+            <button class="sleep-menu-item active" data-minutes="0">Off (Stay Awake)</button>
+            <button class="sleep-menu-item" data-minutes="5">5 min</button>
+            <button class="sleep-menu-item" data-minutes="15">15 min</button>
+            <button class="sleep-menu-item" data-minutes="30">30 min</button>
+            <button class="sleep-menu-item" data-minutes="60">1 hour</button>
+            <button class="sleep-menu-item" data-minutes="custom">Custom...</button>
+          </div>
+        </div>
+
         <!-- Disconnect Device -->
         <button class="tile-btn danger btn-tile-kick" title="Disconnect Camera">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -412,6 +580,8 @@ function getOrCreateCameraTile(deviceId, deviceName) {
   const btnMute = cardEl.querySelector('.btn-tile-mute');
   const btnFocus = cardEl.querySelector('.btn-tile-focus');
   const btnKick = cardEl.querySelector('.btn-tile-kick');
+  const btnSleep = cardEl.querySelector('.btn-tile-sleep');
+  const sleepMenu = cardEl.querySelector('.tile-sleep-menu');
 
   btnSnap.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -433,7 +603,38 @@ function getOrCreateCameraTile(deviceId, deviceName) {
     disconnectDevice(deviceId);
   });
 
+  if (btnSleep && sleepMenu) {
+    btnSleep.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.tile-sleep-menu').forEach(m => {
+        if (m !== sleepMenu) m.style.display = 'none';
+      });
+      if (masterSleepTimerMenu) masterSleepTimerMenu.style.display = 'none';
+      sleepMenu.style.display = sleepMenu.style.display === 'block' ? 'none' : 'block';
+    });
+
+    sleepMenu.querySelectorAll('.sleep-menu-item').forEach(itemBtn => {
+      itemBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sleepMenu.style.display = 'none';
+        const val = itemBtn.getAttribute('data-minutes');
+        if (val === 'custom') {
+          const input = prompt(`Enter sleep duration in minutes for [${cleanName}]:`, '45');
+          if (input && !isNaN(input) && Number(input) > 0) {
+            setDeviceSleepTimer(deviceId, Number(input));
+          }
+        } else {
+          setDeviceSleepTimer(deviceId, Number(val));
+        }
+      });
+    });
+  }
+
   cameraGrid.appendChild(cardEl);
+
+  const initialSleepTimer = masterSleepTimer && masterSleepTimer.active
+    ? { ...masterSleepTimer }
+    : { active: false, expiresAt: null, durationMinutes: null };
 
   const peer = {
     deviceId,
@@ -446,6 +647,7 @@ function getOrCreateCameraTile(deviceId, deviceName) {
     stats: { fps: 0, bitrate: 0, width: 0, height: 0, rtt: 0 },
     isMuted: true,
     status: 'waiting',
+    sleepTimer: initialSleepTimer,
   };
 
   cameraPeers.set(deviceId, peer);
@@ -598,10 +800,17 @@ function captureTileSnapshot(deviceId) {
   if (window.sentinelAudio) window.sentinelAudio.play('snapshot');
 }
 
-// WebSocket Signaling
+// WebSocket / Serverless Universal Signaling
 function connectWebSocket(sessionId) {
-  const wsUrl = window.getWebSocketUrl();
-  ws = new WebSocket(wsUrl);
+  if (window.UniversalSignalingChannel) {
+    ws = new window.UniversalSignalingChannel({
+      sessionId,
+      role: 'host',
+    });
+  } else {
+    const wsUrl = window.getWebSocketUrl();
+    ws = new WebSocket(wsUrl);
+  }
 
   ws.onopen = () => {
     ws.send(JSON.stringify({
@@ -622,19 +831,32 @@ function connectWebSocket(sessionId) {
     switch (msg.type) {
       case 'joined':
         logEvent('SYS', `Signaling channel open (#${msg.sessionId})`);
+        if (msg.sleepTimer) {
+          masterSleepTimer = msg.sleepTimer;
+          updateMasterSleepTimerDisplay(Date.now());
+        }
         if (msg.cameras && Array.isArray(msg.cameras)) {
           msg.cameras.forEach(c => {
-            getOrCreateCameraTile(c.deviceId, c.deviceName);
+            const peer = getOrCreateCameraTile(c.deviceId, c.deviceName);
+            if (c.sleepTimer) {
+              peer.sleepTimer = c.sleepTimer;
+              updateTileSleepDisplay(peer, Date.now());
+            }
           });
         }
         break;
 
-      case 'camera-joined':
-        getOrCreateCameraTile(msg.deviceId, msg.deviceName);
+      case 'camera-joined': {
+        const peer = getOrCreateCameraTile(msg.deviceId, msg.deviceName);
+        if (msg.sleepTimer) {
+          peer.sleepTimer = msg.sleepTimer;
+          updateTileSleepDisplay(peer, Date.now());
+        }
         showToast(`Device paired: ${msg.deviceName} [${msg.deviceId}]`);
         logEvent('PEER', `Device joined grid: ${msg.deviceName} [${msg.deviceId}]`);
         if (window.sentinelAudio) window.sentinelAudio.play('connect');
         break;
+      }
 
       case 'camera-ready': {
         const peer = getOrCreateCameraTile(msg.deviceId, msg.deviceName);
@@ -663,6 +885,39 @@ function connectWebSocket(sessionId) {
         }
         break;
 
+      case 'sleep-timer-updated':
+        if (msg.target === 'all') {
+          masterSleepTimer = msg.sleepTimer || { active: false, expiresAt: null, durationMinutes: null };
+          updateMasterSleepTimerDisplay(Date.now());
+          cameraPeers.forEach(peer => {
+            peer.sleepTimer = { ...masterSleepTimer };
+            updateTileSleepDisplay(peer, Date.now());
+          });
+          if (masterSleepTimer.active) {
+            logEvent('SLEEP', `Master sleep timer updated: ${masterSleepTimer.durationMinutes}m for all devices`);
+          } else {
+            logEvent('SLEEP', 'Master sleep timer turned Off (stay awake)');
+          }
+        } else if (msg.deviceId && cameraPeers.has(msg.deviceId)) {
+          const peer = cameraPeers.get(msg.deviceId);
+          peer.sleepTimer = msg.sleepTimer || { active: false, expiresAt: null, durationMinutes: null };
+          updateTileSleepDisplay(peer, Date.now());
+          if (peer.sleepTimer.active) {
+            logEvent('SLEEP', `Sleep timer set for ${peer.deviceName} [${msg.deviceId}]: ${peer.sleepTimer.durationMinutes}m`);
+          } else {
+            logEvent('SLEEP', `Sleep timer canceled for ${peer.deviceName} [${msg.deviceId}]`);
+          }
+        }
+        break;
+
+      case 'all-sleep':
+        logEvent('SLEEP', 'Master sleep timer reached. Powering down all camera feeds.');
+        showToast('Master sleep timer reached: all cameras put to sleep');
+        if (window.sentinelAudio) window.sentinelAudio.play('disconnect');
+        cameraPeers.forEach(peer => teardownCameraPeer(peer.deviceId));
+        updateCameraMatrixCounts();
+        break;
+
       case 'camera-disconnected':
         teardownCameraPeer(msg.deviceId);
         showToast(`Camera [${msg.deviceId}] disconnected`);
@@ -672,9 +927,7 @@ function connectWebSocket(sessionId) {
 
       case 'session-extended':
         sessionExpiresAt = msg.expiresAt;
-        startCountdown(msg.expiresAt);
         if (btnExtendSession) btnExtendSession.style.display = 'none';
-        countdownDisplay.parentElement.classList.remove('expired');
         showToast('Session extended (+10 mins)');
         logEvent('SYS', 'Session duration extended +10 minutes');
         break;
@@ -945,6 +1198,42 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Master Sleep Timer Trigger Click (QR widget and Viewport button)
+  const toggleMasterSleepMenu = (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.tile-sleep-menu').forEach(m => m.style.display = 'none');
+    if (masterSleepTimerMenu) {
+      masterSleepTimerMenu.style.display = masterSleepTimerMenu.style.display === 'block' ? 'none' : 'block';
+    }
+  };
+
+  if (btnMasterSleepTimer) btnMasterSleepTimer.addEventListener('click', toggleMasterSleepMenu);
+  if (btnViewportSleepTrigger) btnViewportSleepTrigger.addEventListener('click', toggleMasterSleepMenu);
+
+  if (masterSleepTimerMenu) {
+    masterSleepTimerMenu.querySelectorAll('.sleep-menu-item').forEach(itemBtn => {
+      itemBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        masterSleepTimerMenu.style.display = 'none';
+        const val = itemBtn.getAttribute('data-minutes');
+        if (val === 'custom') {
+          const input = prompt('Enter sleep duration in minutes for ALL cameras:', '45');
+          if (input && !isNaN(input) && Number(input) > 0) {
+            setMasterSleepTimer(Number(input));
+          }
+        } else {
+          setMasterSleepTimer(Number(val));
+        }
+      });
+    });
+  }
+
+  // Dismiss dropdowns on outside click
+  document.addEventListener('click', () => {
+    if (masterSleepTimerMenu) masterSleepTimerMenu.style.display = 'none';
+    document.querySelectorAll('.tile-sleep-menu').forEach(m => m.style.display = 'none');
+  });
 }
 
 function toggleGlobalVideoRecording() {

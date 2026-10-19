@@ -674,6 +674,144 @@ body {
   color: #fca5a5;
 }
 
+/* Sleep Timer Controls (Master and Per-Tile) */
+.sleep-timer-widget {
+  position: relative;
+  display: inline-block;
+}
+
+.sleep-timer-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.8rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(8px);
+}
+
+.sleep-timer-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.sleep-timer-trigger.active {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #c4b5fd;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.25);
+}
+
+.sleep-timer-trigger svg {
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.sleep-timer-menu, .tile-sleep-menu, .cam-sleep-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  min-width: 185px;
+  background: rgba(18, 18, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-md);
+  padding: 0.4rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 1px rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(16px);
+}
+
+.sleep-menu-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: 0.35rem 0.6rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 0.25rem;
+}
+
+.sleep-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.sleep-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.sleep-menu-item.active {
+  background: rgba(139, 92, 246, 0.22);
+  color: #ddd6fe;
+  font-weight: 600;
+}
+
+.sleep-menu-item.active::after {
+  content: '✓';
+  font-size: 0.75rem;
+  color: #c4b5fd;
+}
+
+/* Individual Tile Sleep Widget */
+.tile-sleep-wrap {
+  position: relative;
+}
+
+.tile-btn.btn-tile-sleep {
+  position: relative;
+}
+
+.tile-btn.btn-tile-sleep.active {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #c4b5fd;
+}
+
+.tile-sleep-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #8b5cf6;
+  color: #ffffff;
+  font-size: 0.58rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 1px 4px;
+  border-radius: 4px;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
+}
+
+.cam-sleep-popover {
+  bottom: calc(100% + 12px);
+  top: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto;
+  min-width: 190px;
+}
+
 /* Large QR Container */
 .qr-frame {
   background: #ffffff;
@@ -863,6 +1001,32 @@ body {
 .mobile-live-pill.streaming {
   border-color: rgba(16, 185, 129, 0.4);
   color: #a7f3d0;
+}
+
+.cam-header-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(8px);
+}
+
+.cam-header-exit-btn:hover, .cam-header-exit-btn:active {
+  background: #ef4444;
+  color: #ffffff;
+  transform: scale(1.05);
+}
+
+.cam-header-exit-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .camera-viewfinder {
@@ -1939,5 +2103,66 @@ body {
   background: #10b981;
   animation: pulse-dot 1.5s infinite;
 }
+
+/* Hardware Platform & Dynamic Sensor Detection */
+.hardware-detect-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  margin-bottom: 1.15rem;
+}
+
+.hardware-detect-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.hardware-detect-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.hardware-detect-tag {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.hardware-detect-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.hardware-sensor-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sensor-pill {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-light);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.sensor-pill.ready {
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.08);
+}
+
 
 

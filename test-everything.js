@@ -224,15 +224,129 @@ async function runTestSuite() {
   const extendData = await extendRes.json();
   assert(extendRes.status === 200 && extendData.success && extendData.remainingSeconds > 600, 'Session duration successfully extended by +10 minutes');
 
-  // --- 4. SESSION TERMINATION & CLEANUP TESTS ---
-  console.log('\n[4/4] Testing Session Termination & Cleanup...');
+  // --- 4. DATABASE & SERVERLESS SIGNALING TESTS ---
+  console.log('\n[4/5] Testing MongoDB Persistence & Serverless Signaling Gateways...');
 
-  // Test 4.1: Explicit session termination
+  // Test 4.1: Database status endpoint
+  const dbStatusRes = await fetch(`${BASE_URL}/api/db/status`);
+  const dbStatusData = await dbStatusRes.json();
+  assert(dbStatusRes.status === 200 && dbStatusData.success, 'Database status endpoint operational');
+  console.log(`       [DB Mode: ${dbStatusData.mode.toUpperCase()}] Connected: ${dbStatusData.connected}`);
+
+  // Test 4.2: Isolated Camera Red Cross Disconnect (Camera leaves voluntarily)
+  const isoSessionRes = await fetch(`${BASE_URL}/api/sessions/create?host=127.0.0.1&protocol=http`, {
+    method: 'POST',
+    headers: { Cookie: authCookie },
+  });
+  const isoSessionData = await isoSessionRes.json();
+  const isoSessionId = isoSessionData.sessionId;
+
+  const wsHostIso = new WebSocket('ws://localhost:3000');
+  const wsCamA = new WebSocket('ws://localhost:3000');
+  const wsCamB = new WebSocket('ws://localhost:3000');
+
+  await new Promise(resolve => {
+    let count = 0;
+    const check = () => { if (++count === 3) resolve(); };
+    wsHostIso.on('open', check);
+    wsCamA.on('open', check);
+    wsCamB.on('open', check);
+  });
+
+  let hostIsoCameraDisconnected = null;
+  wsHostIso.on('message', data => {
+    const msg = JSON.parse(data);
+    if (msg.type === 'camera-disconnected') {
+      hostIsoCameraDisconnected = msg.deviceId;
+    }
+  });
+
+  wsHostIso.send(JSON.stringify({ type: 'join', sessionId: isoSessionId, role: 'host' }));
+  wsCamA.send(JSON.stringify({ type: 'join', sessionId: isoSessionId, role: 'camera', deviceId: 'CAM-ALPHA', deviceName: 'Laptop Cam' }));
+  wsCamB.send(JSON.stringify({ type: 'join', sessionId: isoSessionId, role: 'camera', deviceId: 'CAM-BETA', deviceName: 'Mobile Cam' }));
+  await new Promise(r => setTimeout(r, 200));
+
+  // Device CAM-ALPHA clicks red cross -> Calls /api/sessions/:id/cameras/CAM-ALPHA/end
+  const alphaEndRes = await fetch(`${BASE_URL}/api/sessions/${isoSessionId}/cameras/CAM-ALPHA/end`, { method: 'POST' });
+  const alphaEndData = await alphaEndRes.json();
+  assert(alphaEndRes.status === 200 && alphaEndData.success, 'Isolated camera termination endpoint returns success');
+
+  await new Promise(r => setTimeout(r, 200));
+  assert(hostIsoCameraDisconnected === 'CAM-ALPHA', 'Host received isolated camera-disconnected alert for CAM-ALPHA only');
+
+  // Verify session is STILL active and CAM-BETA is STILL connected
+  const checkSessionRes = await fetch(`${BASE_URL}/api/sessions/${isoSessionId}`);
+  const checkSessionData = await checkSessionRes.json();
+  assert(checkSessionRes.status === 200, 'Host session remains active after single camera disconnects');
+  assert(checkSessionData.cameraCount === 1, 'Exactly 1 camera remaining in session');
+  assert(checkSessionData.cameras[0].deviceId === 'CAM-BETA', 'CAM-BETA remains unaffected and live in session');
+
+  // Test 4.3: Serverless HTTP Signaling Delivery (Vercel Compatibility)
+  const sendSignalingRes = await fetch(`${BASE_URL}/api/signaling/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: isoSessionId,
+      sender: 'CAM-BETA',
+      target: 'host',
+      message: { type: 'test-offer', data: 'sdp-test-payload' },
+    }),
+  });
+  const sendSignalingData = await sendSignalingRes.json();
+  assert(sendSignalingRes.status === 200 && sendSignalingData.success, 'Serverless POST /api/signaling/send accepts message');
+
+  // Test 4.4: Serverless HTTP Signaling Poll
+  const pollSignalingRes = await fetch(`${BASE_URL}/api/signaling/poll?sessionId=${isoSessionId}&role=host&since=0`);
+  const pollSignalingData = await pollSignalingRes.json();
+  assert(pollSignalingRes.status === 200 && Array.isArray(pollSignalingData.messages), 'Serverless GET /api/signaling/poll returns messages');
+  const foundTestMsg = pollSignalingData.messages.find(m => m.type === 'test-offer');
+  assert(!!foundTestMsg && foundTestMsg.data === 'sdp-test-payload', 'Host polled WebRTC signaling message via HTTP fallback');
+
+  // Test 4.5: Master Sleep Timer (All Devices at once)
+  const masterSleepRes = await fetch(`${BASE_URL}/api/sessions/${isoSessionId}/sleep-timer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target: 'all', minutes: 15 }),
+  });
+  const masterSleepData = await masterSleepRes.json();
+  assert(masterSleepRes.status === 200 && masterSleepData.success && masterSleepData.sleepTimer.active, 'Master Sleep Timer configured for all devices (15m)');
+  assert(masterSleepData.sleepTimer.durationMinutes === 15, 'Master sleep timer duration set to 15 minutes');
+
+  // Test 4.6: Individual Device Sleep Timer (Custom per-device sleep timer)
+  const deviceSleepRes = await fetch(`${BASE_URL}/api/sessions/${isoSessionId}/sleep-timer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target: 'CAM-BETA', minutes: 5 }),
+  });
+  const deviceSleepData = await deviceSleepRes.json();
+  assert(deviceSleepRes.status === 200 && deviceSleepData.success, 'Individual device sleep timer configured for CAM-BETA');
+  assert(deviceSleepData.sleepTimer.durationMinutes === 5, 'Individual device sleep timer duration set to 5 minutes');
+
+  // Test 4.7: Turn off Sleep Timer (Stay Awake)
+  const cancelSleepRes = await fetch(`${BASE_URL}/api/sessions/${isoSessionId}/sleep-timer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target: 'all', minutes: 0 }),
+  });
+  const cancelSleepData = await cancelSleepRes.json();
+  assert(cancelSleepRes.status === 200 && !cancelSleepData.sleepTimer.active, 'Master Sleep Timer successfully turned Off (stay awake)');
+
+  wsHostIso.close();
+  wsCamA.close();
+  wsCamB.close();
+
+  // Clean up isoSession
+  await fetch(`${BASE_URL}/api/sessions/${isoSessionId}/end`, { method: 'POST' });
+
+  // --- 5. SESSION TERMINATION & CLEANUP TESTS ---
+  console.log('\n[5/5] Testing Session Termination & Cleanup...');
+
+  // Test 5.1: Explicit session termination
   const endRes = await fetch(`${BASE_URL}/api/sessions/${sessionId}/end`, { method: 'POST' });
   const endData = await endRes.json();
   assert(endRes.status === 200 && endData.success, 'Session explicitly terminated via API');
 
-  // Test 4.2: Terminated session should return 404 or ended status
+  // Test 5.2: Terminated session should return 404 or ended status
   const afterEndRes = await fetch(`${BASE_URL}/api/sessions/${sessionId}`);
   assert(afterEndRes.status === 404, 'Terminated session deleted from active memory');
 

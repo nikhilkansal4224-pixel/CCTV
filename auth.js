@@ -43,10 +43,16 @@ function verifyPassword(password, storedHash, salt) {
   return crypto.timingSafeEqual(hashBuffer, storedBuffer);
 }
 
-// Users Database Management
-function loadUsers() {
+const db = require('./db');
+
+// Connect to MongoDB asynchronously
+db.connectDB().catch(err => {
+  console.warn('[Auth] Database connection notice:', err.message);
+});
+
+// Seed default users file if needed
+function initDefaultUsersFile() {
   if (!fs.existsSync(USERS_FILE)) {
-    // Seed default admin account
     const defaultSalt = crypto.randomBytes(16).toString('hex');
     const { hash } = hashPassword('password123', defaultSalt);
     const defaultUsers = [
@@ -63,7 +69,12 @@ function loadUsers() {
     fs.writeFileSync(USERS_FILE, JSON.stringify(defaultUsers, null, 2), 'utf8');
     return defaultUsers;
   }
+}
+initDefaultUsersFile();
 
+// Users Database Management (Synchronous fallback for non-async callers)
+function loadUsers() {
+  initDefaultUsersFile();
   try {
     const content = fs.readFileSync(USERS_FILE, 'utf8');
     return JSON.parse(content);
@@ -77,11 +88,10 @@ function saveUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
 }
 
-// User Authentication
-function authenticate(username, password) {
+// User Authentication (MongoDB + local fallback)
+async function authenticate(username, password) {
   if (!username || !password) return null;
-  const users = loadUsers();
-  const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+  const user = await db.findUserByUsername(username);
   if (!user) return null;
 
   if (verifyPassword(password, user.hash, user.salt)) {
@@ -95,8 +105,8 @@ function authenticate(username, password) {
   return null;
 }
 
-// Register New Operator
-function register(username, password, role = 'Security Operator', displayName = '') {
+// Register New Operator (MongoDB + local fallback)
+async function register(username, password, role = 'Security Operator', displayName = '') {
   if (!username || username.trim().length < 3) {
     throw new Error('Username must be at least 3 characters');
   }
@@ -104,9 +114,9 @@ function register(username, password, role = 'Security Operator', displayName = 
     throw new Error('Password must be at least 6 characters');
   }
 
-  const users = loadUsers();
   const cleanUsername = username.trim().toLowerCase();
-  if (users.some(u => u.username.toLowerCase() === cleanUsername)) {
+  const existingUser = await db.findUserByUsername(cleanUsername);
+  if (existingUser) {
     throw new Error('Username is already taken');
   }
 
@@ -121,8 +131,7 @@ function register(username, password, role = 'Security Operator', displayName = 
     createdAt: new Date().toISOString(),
   };
 
-  users.push(newUser);
-  saveUsers(users);
+  await db.insertUser(newUser);
 
   return {
     id: newUser.id,

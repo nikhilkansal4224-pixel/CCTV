@@ -48,12 +48,191 @@ const viewfinderDeviceHud = document.getElementById('viewfinderDeviceHud');
 const viewfinderDeviceId = document.getElementById('viewfinderDeviceId');
 const viewfinderDeviceName = document.getElementById('viewfinderDeviceName');
 
+// Hardware platform & sensor detection elements
+const hardwareDetectBanner = document.getElementById('hardwareDetectBanner');
+const hardwareDetectIcon = document.getElementById('hardwareDetectIcon');
+const hardwareDetectTitle = document.getElementById('hardwareDetectTitle');
+const cameraCountPill = document.getElementById('cameraCountPill');
+const micCountPill = document.getElementById('micCountPill');
+const detectedCameraNote = document.getElementById('detectedCameraNote');
+const micAvailableRow = document.getElementById('micAvailableRow');
+const noMicNotice = document.getElementById('noMicNotice');
+const micSensorInfo = document.getElementById('micSensorInfo');
+const micToggleLabel = document.getElementById('micToggleLabel');
+
 if (headerDeviceId) headerDeviceId.textContent = deviceId;
 if (deviceIdDisplay) deviceIdDisplay.textContent = deviceId;
 if (deviceNameInput && deviceName) deviceNameInput.value = deviceName;
 
 if (sessionTokenDisplay) {
   sessionTokenDisplay.textContent = sessionId || 'INVALID';
+}
+
+// Detect hardware platform (Laptop, Desktop, Mobile, Tablet)
+function detectDevicePlatform() {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  const isTablet = /iPad|Tablet/i.test(ua) || (isAndroid && !/Mobile/i.test(ua)) || (navigator.maxTouchPoints > 1 && window.innerWidth >= 768);
+  const isMobile = (isIOS || isAndroid || /Mobile/i.test(ua)) && !isTablet;
+  const isMac = /Macintosh|MacIntel/.test(ua);
+  const isWindows = /Win32|Win64|Windows/.test(ua);
+  const isLinux = /Linux/.test(ua) && !isAndroid;
+
+  let platformName = 'Desktop PC';
+  let category = 'laptop';
+  let icon = '💻';
+  let defaultLabel = 'Desktop Camera';
+
+  if (isMobile) {
+    platformName = isIOS ? 'Mobile Phone (iPhone)' : (isAndroid ? 'Mobile Phone (Android)' : 'Mobile Phone');
+    category = 'mobile';
+    icon = '📱';
+    defaultLabel = isIOS ? 'iPhone Camera' : 'Android Camera';
+  } else if (isTablet) {
+    platformName = isIOS ? 'Tablet (iPad)' : (isAndroid ? 'Tablet (Android)' : 'Tablet');
+    category = 'tablet';
+    icon = '📱';
+    defaultLabel = isIOS ? 'iPad Camera' : 'Tablet Camera';
+  } else if (isMac) {
+    platformName = 'Laptop / Desktop (macOS)';
+    category = 'laptop';
+    icon = '💻';
+    defaultLabel = 'MacBook Pro Webcam';
+  } else if (isWindows) {
+    platformName = 'Laptop / PC (Windows)';
+    category = 'laptop';
+    icon = '💻';
+    defaultLabel = 'Windows Webcam';
+  } else if (isLinux) {
+    platformName = 'Workstation (Linux)';
+    category = 'laptop';
+    icon = '💻';
+    defaultLabel = 'Linux Webcam';
+  }
+
+  return { platformName, category, icon, defaultLabel };
+}
+
+// Enumerate only cameras and microphones that actually exist on this hardware
+async function enumerateHardwareSensors(platform) {
+  if (hardwareDetectIcon) hardwareDetectIcon.textContent = platform.icon;
+  if (hardwareDetectTitle) hardwareDetectTitle.textContent = platform.platformName;
+
+  // Pre-fill camera name input if empty
+  if (deviceNameInput && !deviceNameInput.value.trim()) {
+    deviceNameInput.value = platform.defaultLabel;
+    deviceName = platform.defaultLabel;
+  }
+
+  facingSelect.innerHTML = '';
+
+  let videoDevices = [];
+  let audioDevices = [];
+
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    try {
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = allDevices.filter(d => d.kind === 'videoinput');
+      audioDevices = allDevices.filter(d => d.kind === 'audioinput');
+    } catch (e) {
+      console.warn('enumerateDevices error:', e);
+    }
+  }
+
+  // --- 1. POPULATE CAMERAS THAT ACTUALLY EXIST ---
+  if (platform.category === 'laptop') {
+    // LAPTOP / DESKTOP: Typically only has 1 front webcam, no rear back camera!
+    if (videoDevices.length > 0) {
+      videoDevices.forEach((dev, idx) => {
+        const opt = document.createElement('option');
+        opt.value = dev.deviceId || 'user';
+        opt.textContent = dev.label || (videoDevices.length === 1 ? 'Built-in Webcam (Front Sensor)' : `Webcam #${idx + 1}`);
+        facingSelect.appendChild(opt);
+      });
+      if (detectedCameraNote) detectedCameraNote.textContent = `${videoDevices.length} Webcam Available`;
+      if (cameraCountPill) {
+        cameraCountPill.textContent = `🎥 ${videoDevices.length} Webcam`;
+        cameraCountPill.classList.add('ready');
+      }
+    } else {
+      const opt = document.createElement('option');
+      opt.value = 'user';
+      opt.textContent = 'Built-in Webcam (Front Sensor)';
+      facingSelect.appendChild(opt);
+      if (cameraCountPill) cameraCountPill.textContent = `🎥 1 Webcam (Default)`;
+    }
+  } else {
+    // MOBILE / TABLET: Has rear + front cameras
+    if (videoDevices.length >= 2) {
+      const backOpt = document.createElement('option');
+      backOpt.value = 'environment';
+      backOpt.textContent = 'Back Camera (Main Sensor)';
+      backOpt.selected = true;
+      facingSelect.appendChild(backOpt);
+
+      const frontOpt = document.createElement('option');
+      frontOpt.value = 'user';
+      frontOpt.textContent = 'Front Camera (Selfie / Ultra-wide)';
+      facingSelect.appendChild(frontOpt);
+
+      videoDevices.slice(2).forEach((dev, idx) => {
+        const opt = document.createElement('option');
+        opt.value = dev.deviceId;
+        opt.textContent = dev.label || `Aux Lens #${idx + 1}`;
+        facingSelect.appendChild(opt);
+      });
+
+      if (detectedCameraNote) detectedCameraNote.textContent = `${videoDevices.length} Lenses Available`;
+      if (cameraCountPill) {
+        cameraCountPill.textContent = `🎥 ${videoDevices.length} Lenses`;
+        cameraCountPill.classList.add('ready');
+      }
+    } else if (videoDevices.length === 1) {
+      const opt = document.createElement('option');
+      opt.value = 'environment';
+      opt.textContent = 'Main Camera Sensor';
+      facingSelect.appendChild(opt);
+      if (cameraCountPill) cameraCountPill.textContent = `🎥 1 Camera`;
+    } else {
+      const backOpt = document.createElement('option');
+      backOpt.value = 'environment';
+      backOpt.textContent = 'Back Camera (Main Sensor)';
+      backOpt.selected = true;
+      facingSelect.appendChild(backOpt);
+
+      const frontOpt = document.createElement('option');
+      frontOpt.value = 'user';
+      frontOpt.textContent = 'Front Camera (Selfie)';
+      facingSelect.appendChild(frontOpt);
+      if (cameraCountPill) cameraCountPill.textContent = `🎥 2 Cameras (Default)`;
+    }
+  }
+
+  // Always append Virtual CCTV Test Pattern
+  const simOpt = document.createElement('option');
+  simOpt.value = 'simulator';
+  simOpt.textContent = 'Virtual CCTV Test Pattern (No Hardware Required)';
+  facingSelect.appendChild(simOpt);
+
+  // --- 2. POPULATE MICROPHONES THAT ACTUALLY EXIST ---
+  if (audioDevices.length > 0) {
+    if (micAvailableRow) micAvailableRow.style.display = 'block';
+    if (noMicNotice) noMicNotice.style.display = 'none';
+    const firstMic = audioDevices[0];
+    const micName = firstMic.label || (platform.category === 'laptop' ? 'Internal Microphone (Built-in)' : 'Built-in Device Mic');
+    if (micSensorInfo) micSensorInfo.textContent = `Detected: ${micName}`;
+    if (micToggleLabel) micToggleLabel.textContent = `Transmit Audio (${micName})`;
+    if (micCountPill) {
+      micCountPill.textContent = `🎙️ ${audioDevices.length} Mic`;
+      micCountPill.classList.add('ready');
+    }
+  } else {
+    if (micAudioToggle) micAudioToggle.checked = false;
+    if (micAvailableRow) micAvailableRow.style.display = 'none';
+    if (noMicNotice) noMicNotice.style.display = 'block';
+    if (micCountPill) micCountPill.textContent = '🎙️ No Mic';
+  }
 }
 
 // Generate animated CCTV test pattern simulator stream
@@ -66,11 +245,9 @@ function createSimulatorStream(width = 1280, height = 720) {
   let frame = 0;
   function draw() {
     frame++;
-    // Dark CCTV background
     ctx.fillStyle = '#0a0a0f';
     ctx.fillRect(0, 0, width, height);
 
-    // Subtle grid
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
     ctx.lineWidth = 1;
     for (let x = 0; x < width; x += 80) {
@@ -80,12 +257,10 @@ function createSimulatorStream(width = 1280, height = 720) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
     }
 
-    // Moving scanline
     const scanY = (frame * 3) % height;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.fillRect(0, scanY, width, 6);
 
-    // Radar / Crosshairs
     const cx = width / 2;
     const cy = height / 2;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -96,7 +271,6 @@ function createSimulatorStream(width = 1280, height = 720) {
     ctx.moveTo(cx, cy - 90); ctx.lineTo(cx, cy + 90);
     ctx.stroke();
 
-    // Rotating sweep
     const angle = (frame * 0.035) % (Math.PI * 2);
     ctx.strokeStyle = '#10b981';
     ctx.lineWidth = 2;
@@ -105,7 +279,6 @@ function createSimulatorStream(width = 1280, height = 720) {
     ctx.lineTo(cx + Math.cos(angle) * 70, cy + Math.sin(angle) * 70);
     ctx.stroke();
 
-    // Digital Telemetry Overlay
     ctx.font = 'bold 22px monospace';
     ctx.fillStyle = '#ffffff';
     ctx.fillText('SENTINEL // SURVEILLANCE TEST SIMULATOR', 40, 50);
@@ -114,7 +287,7 @@ function createSimulatorStream(width = 1280, height = 720) {
     ctx.font = '16px monospace';
     ctx.fillStyle = '#a1a1aa';
     ctx.fillText(`TIMESTAMP : ${now.toISOString().replace('T', ' ').slice(0, 19)} UTC`, 40, 85);
-    ctx.fillText(`CHANNEL   : CAM-01 [VIRTUAL ENCRYPTED LINK]`, 40, 115);
+    ctx.fillText(`CHANNEL   : ${deviceId || 'CAM-01'} [VIRTUAL ENCRYPTED LINK]`, 40, 115);
     ctx.fillText(`SESSION   : ${sessionId || 'DEV-MODE'}`, 40, 145);
     ctx.fillText(`FRAME     : #${frame}`, 40, 175);
 
@@ -125,12 +298,105 @@ function createSimulatorStream(width = 1280, height = 720) {
   return canvas.captureStream(30);
 }
 
+let camSleepTimer = { active: false, expiresAt: null, durationMinutes: null };
+let camSleepInterval = null;
+
+function initCamSleepTimerTicker() {
+  if (camSleepInterval) clearInterval(camSleepInterval);
+  camSleepInterval = setInterval(() => {
+    updateCamSleepTimerUI();
+  }, 1000);
+}
+
+function updateCamSleepTimerUI() {
+  const mobileSleepPill = document.getElementById('mobileSleepPill');
+  const mobileSleepText = document.getElementById('mobileSleepText');
+  const camSleepBadge = document.getElementById('camSleepBadge');
+  const btnCamSleepTimer = document.getElementById('btnCamSleepTimer');
+  const now = Date.now();
+
+  if (camSleepTimer && camSleepTimer.active && camSleepTimer.expiresAt) {
+    const remaining = Math.max(0, Math.floor((camSleepTimer.expiresAt - now) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    const txt = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+    if (mobileSleepPill) mobileSleepPill.style.display = 'inline-flex';
+    if (mobileSleepText) mobileSleepText.textContent = txt;
+    if (camSleepBadge) {
+      camSleepBadge.textContent = remaining > 60 ? `${mins}m` : `${mins}:${String(secs).padStart(2, '0')}`;
+      camSleepBadge.style.display = 'block';
+    }
+    if (btnCamSleepTimer) btnCamSleepTimer.classList.add('active');
+
+    const popover = document.getElementById('camSleepPopover');
+    if (popover) {
+      popover.querySelectorAll('.sleep-menu-item').forEach(b => {
+        const val = b.getAttribute('data-minutes');
+        b.classList.toggle('active', val !== 'custom' && Number(val) === camSleepTimer.durationMinutes);
+      });
+    }
+
+    if (remaining <= 0) {
+      camSleepTimer.active = false;
+      if (mobileSleepPill) mobileSleepPill.style.display = 'none';
+      if (camSleepBadge) camSleepBadge.style.display = 'none';
+      if (btnCamSleepTimer) btnCamSleepTimer.classList.remove('active');
+      handleSessionEnded('Individual device sleep timer reached. Camera sensor powered down.');
+    }
+  } else {
+    if (mobileSleepPill) mobileSleepPill.style.display = 'none';
+    if (camSleepBadge) camSleepBadge.style.display = 'none';
+    if (btnCamSleepTimer) btnCamSleepTimer.classList.remove('active');
+    const popover = document.getElementById('camSleepPopover');
+    if (popover) {
+      popover.querySelectorAll('.sleep-menu-item').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-minutes') === '0');
+      });
+    }
+  }
+}
+
+async function setCameraSleepTimer(minutes) {
+  const numMinutes = (minutes !== null && minutes !== undefined && !isNaN(minutes) && Number(minutes) > 0)
+    ? Number(minutes)
+    : null;
+  const active = numMinutes !== null;
+  const expiresAt = active ? Date.now() + numMinutes * 60 * 1000 : null;
+
+  camSleepTimer = { active, expiresAt, durationMinutes: numMinutes };
+  updateCamSleepTimerUI();
+
+  try {
+    await fetch(`/api/sessions/${sessionId}/sleep-timer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: deviceId, minutes: numMinutes }),
+    });
+  } catch (e) {}
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'set-sleep-timer',
+      sessionId,
+      target: deviceId,
+      minutes: numMinutes,
+    }));
+  }
+
+  window.showToast(active ? `Sleep Timer: ${numMinutes} minute${numMinutes === 1 ? '' : 's'}` : 'Sleep Timer turned Off');
+}
+
 // Initial Boot
 async function initCamera() {
   if (!sessionId) {
     showError('Invalid or missing session ID in link. Please re-scan QR code.');
     return;
   }
+
+  // Detect platform and enumerate real hardware sensors
+  const platform = detectDevicePlatform();
+  await enumerateHardwareSensors(platform);
 
   // Verify session validity with server
   try {
@@ -143,32 +409,16 @@ async function initCamera() {
       }
       return;
     }
+    const sessionData = await res.json();
+    if (sessionData.sleepTimer) {
+      camSleepTimer = sessionData.sleepTimer;
+      updateCamSleepTimerUI();
+    }
   } catch (err) {
     console.error('Session check failed:', err);
   }
 
-  // Enumerate physical camera lenses if supported
-  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d => d.kind === 'videoinput');
-      if (videoDevices.length > 2) {
-        // Populate additional hardware lenses
-        videoDevices.forEach((dev, idx) => {
-          if (dev.label && !Array.from(facingSelect.options).some(o => o.value === dev.deviceId)) {
-            const opt = document.createElement('option');
-            opt.value = dev.deviceId;
-            opt.textContent = `${dev.label || `Lens #${idx + 1}`}`;
-            facingSelect.insertBefore(opt, facingSelect.querySelector('option[value="simulator"]'));
-          }
-        });
-      }
-    } catch (e) {
-      // Ignored
-    }
-  }
-
-  // Connect signaling WebSocket
+  // Connect signaling
   connectWebSocket();
 
   // User must explicitly click "Allow & Start Camera"
@@ -176,9 +426,43 @@ async function initCamera() {
   btnFlipCamera.addEventListener('click', toggleCameraFacing);
   btnToggleTorch.addEventListener('click', toggleTorch);
   btnMobileEndSession.addEventListener('click', handleEndSessionClick);
+  const btnHeaderExit = document.getElementById('btnHeaderExit');
+  if (btnHeaderExit) btnHeaderExit.addEventListener('click', handleEndSessionClick);
 
   if (btnToggleMic) btnToggleMic.addEventListener('click', toggleMicMute);
   if (btnZoom) btnZoom.addEventListener('click', toggleDigitalZoom);
+
+  // Sleep Timer Button & Popover
+  const btnCamSleepTimer = document.getElementById('btnCamSleepTimer');
+  const camSleepPopover = document.getElementById('camSleepPopover');
+  if (btnCamSleepTimer && camSleepPopover) {
+    btnCamSleepTimer.addEventListener('click', (e) => {
+      e.stopPropagation();
+      camSleepPopover.style.display = camSleepPopover.style.display === 'block' ? 'none' : 'block';
+    });
+
+    camSleepPopover.querySelectorAll('.sleep-menu-item').forEach(itemBtn => {
+      itemBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        camSleepPopover.style.display = 'none';
+        const val = itemBtn.getAttribute('data-minutes');
+        if (val === 'custom') {
+          const input = prompt('Enter sleep duration in minutes for this camera:', '45');
+          if (input && !isNaN(input) && Number(input) > 0) {
+            setCameraSleepTimer(Number(input));
+          }
+        } else {
+          setCameraSleepTimer(Number(val));
+        }
+      });
+    });
+
+    document.addEventListener('click', () => {
+      camSleepPopover.style.display = 'none';
+    });
+  }
+
+  initCamSleepTimerTicker();
 }
 
 function updateStatus(state, text) {
@@ -205,10 +489,19 @@ function showError(msg) {
   updateStatus('ended', 'SESSION ERROR');
 }
 
-// Signaling WebSocket
+// Signaling WebSocket / Serverless Universal Channel
 function connectWebSocket() {
-  const wsUrl = window.getWebSocketUrl();
-  ws = new WebSocket(wsUrl);
+  if (window.UniversalSignalingChannel) {
+    ws = new window.UniversalSignalingChannel({
+      sessionId,
+      role: 'camera',
+      deviceId,
+      deviceName: deviceName || `Camera ${deviceId}`,
+    });
+  } else {
+    const wsUrl = window.getWebSocketUrl();
+    ws = new WebSocket(wsUrl);
+  }
 
   ws.onopen = () => {
     ws.send(JSON.stringify({
@@ -238,6 +531,10 @@ function connectWebSocket() {
           if (headerDeviceId) headerDeviceId.textContent = deviceId;
           if (deviceIdDisplay) deviceIdDisplay.textContent = deviceId;
         }
+        if (msg.sleepTimer) {
+          camSleepTimer = msg.sleepTimer;
+          updateCamSleepTimerUI();
+        }
         break;
 
       case 'answer':
@@ -255,6 +552,26 @@ function connectWebSocket() {
             console.error('Error adding ICE candidate:', e);
           }
         }
+        break;
+
+      case 'sleep-timer-updated':
+        if (msg.target === 'all' || msg.deviceId === deviceId) {
+          camSleepTimer = msg.sleepTimer || { active: false, expiresAt: null, durationMinutes: null };
+          updateCamSleepTimerUI();
+          if (camSleepTimer.active) {
+            window.showToast(`Sleep Timer updated: ${camSleepTimer.durationMinutes}m`);
+          } else {
+            window.showToast('Sleep Timer disabled');
+          }
+        }
+        break;
+
+      case 'device-sleep':
+        handleSessionEnded('Individual device sleep timer reached. Camera sensor powered down.');
+        break;
+
+      case 'all-sleep':
+        handleSessionEnded('Master sleep timer reached. Camera sensor powered down.');
         break;
 
       case 'device-kicked':
@@ -547,25 +864,71 @@ async function toggleTorch() {
   }
 }
 
-// Explicit End Session action
+// Explicit End Session action (Only terminates THIS camera device!)
 async function handleEndSessionClick() {
-  if (confirm('Are you sure you want to end this camera session? Camera access will terminate immediately.')) {
+  if (confirm('Disconnect this camera? Other cameras in this session will remain active.')) {
     try {
-      await fetch(`/api/sessions/${sessionId}/end`, { method: 'POST' });
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'end-session',
-          sessionId,
-          reason: 'Camera device owner ended the session',
-        }));
-      }
+      await fetch(`/api/sessions/${sessionId}/cameras/${deviceId}/end`, { method: 'POST' });
     } catch (e) {}
-    handleSessionEnded('You ended the camera session');
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'leave-device',
+        sessionId,
+        deviceId,
+        reason: 'Camera disconnected by device owner',
+      }));
+    }
+    handleSessionEnded('You disconnected this camera. Other cameras in this session remain active.');
   }
 }
 
+// Hardware Safe Exit & Window Close Function
+window.closeWindowSafe = function() {
+  console.log('[Camera] Attempting window close...');
+
+  // 1. Try browser window.close()
+  try {
+    window.close();
+  } catch (e) {}
+
+  // 2. Try window.open self hack (works in some Chrome/Android & desktop webviews)
+  try {
+    window.open('', '_self', '');
+    window.close();
+  } catch (e) {}
+
+  // 3. Fallback: if browser sandbox prohibits script tab closing:
+  setTimeout(() => {
+    // If navigation history exists, try returning back
+    if (window.history && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+
+    // Show clear feedback and return to dashboard button
+    const notice = document.getElementById('closeWindowHelpNotice');
+    if (notice) notice.style.display = 'block';
+
+    const btn = document.getElementById('btnCloseWindowSafe');
+    if (btn) {
+      btn.innerHTML = `
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+        <span>Return to Dashboard</span>
+      `;
+      btn.onclick = () => { window.location.href = '/login.html'; };
+    }
+  }, 200);
+};
+
 // Hardware Cleanup & Termination
 function handleSessionEnded(reason) {
+  if (camSleepInterval) {
+    clearInterval(camSleepInterval);
+    camSleepInterval = null;
+  }
+
   // HARDWARE SAFETY: Stop all camera sensor tracks immediately!
   if (localStream) {
     localStream.getTracks().forEach((track) => {
@@ -609,7 +972,23 @@ function handleSessionEnded(reason) {
         </div>
         <p class="consent-notice-desc">All video streaming has stopped and browser hardware permissions were released. You can safely close this tab.</p>
       </div>
-      <button class="btn btn-outline btn-block" onclick="window.close()">Close Window</button>
+      <div style="display: flex; flex-direction: column; gap: 0.6rem; width: 100%;">
+        <button class="btn btn-outline btn-block" id="btnCloseWindowSafe" onclick="window.closeWindowSafe()">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          <span>Close Window</span>
+        </button>
+        <button class="btn btn-primary btn-block" onclick="window.location.href='/login.html'">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          <span>Return to Dashboard</span>
+        </button>
+      </div>
+      <div id="closeWindowHelpNotice" style="display: none; margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-tertiary); text-align: center;">
+        ℹ️ Camera sensors are powered down. Your browser prevents scripts from auto-closing tabs opened via QR scan. You can safely swipe this tab closed or tap above to return.
+      </div>
     </div>
   `;
 

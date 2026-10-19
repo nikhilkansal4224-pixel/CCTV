@@ -36,6 +36,19 @@
         <span class="status-dot waiting" id="mobileStatusDot"></span>
         <span id="mobileStatusText">INITIALIZING</span>
       </div>
+
+      <!-- Sleep Timer indicator -->
+      <div class="mobile-live-pill" id="mobileSleepPill" style="display: none; border-color: rgba(139, 92, 246, 0.4); color: #c4b5fd;">
+        <span>🌙</span>
+        <span id="mobileSleepText">--:--</span>
+      </div>
+
+      <!-- Red cross button to terminate this device session immediately -->
+      <button class="cam-header-exit-btn" id="btnHeaderExit" title="Disconnect This Camera Only">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -66,21 +79,15 @@
           A paired monitor is requesting permission to access this device as a live surveillance camera.
         </p>
 
-        <!-- Unique Device ID & Hardware Profile Box -->
+        <!-- Unique Device ID Profile Box -->
         <div class="device-identity-card">
           <div class="device-identity-header">
-            <div>
-              <span class="device-identity-label">Hardware Type & ID</span>
-              <div class="detected-device-badge" id="detectedDeviceBadge" style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.25rem; font-size: 0.78rem; color: #ffffff;">
-                <span id="detectedIcon" style="font-size: 1rem;">💻</span>
-                <span id="detectedLabel" style="font-weight: 600;">Detecting device...</span>
-              </div>
-            </div>
+            <span class="device-identity-label">Unique Device Identifier</span>
             <span class="device-id-code" id="deviceIdDisplay">CAM-XXXX</span>
           </div>
-          <div style="margin-top: 0.75rem;">
-            <label class="input-label" for="deviceNameInput" style="font-size: 0.72rem;">Camera Label / Location</label>
-            <input type="text" id="deviceNameInput" class="custom-input" placeholder="e.g. Front Door, Living Room, Laptop Webcam" maxlength="32" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; margin-top: 0.25rem;">
+          <div style="margin-top: 0.6rem;">
+            <label class="input-label" for="deviceNameInput" style="font-size: 0.72rem;">Camera Name / Location (Optional)</label>
+            <input type="text" id="deviceNameInput" class="custom-input" placeholder="e.g. Front Door, Living Room, Backyard" maxlength="32" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; margin-top: 0.25rem;">
           </div>
         </div>
 
@@ -99,15 +106,28 @@
 
         <div id="errorNotice" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; font-size: 0.82rem; padding: 0.75rem; border-radius: var(--radius-sm); margin-bottom: 1.25rem;"></div>
 
-        <!-- Camera Device Options (Dynamic based on hardware detected) -->
+        <!-- Hardware Platform & Sensor Detection Banner -->
+        <div class="hardware-detect-banner" id="hardwareDetectBanner">
+          <div class="hardware-detect-icon" id="hardwareDetectIcon">💻</div>
+          <div class="hardware-detect-info">
+            <span class="hardware-detect-tag">HARDWARE PLATFORM DETECTED</span>
+            <div class="hardware-detect-title" id="hardwareDetectTitle">Detecting Device...</div>
+          </div>
+          <div class="hardware-sensor-pills">
+            <span class="sensor-pill" id="cameraCountPill">🎥 Scanning...</span>
+            <span class="sensor-pill" id="micCountPill">🎙️ Scanning...</span>
+          </div>
+        </div>
+
+        <!-- Camera Device Options -->
         <div class="device-options-group">
           <div>
             <div style="display: flex; align-items: center; justify-content: space-between;">
-              <label class="input-label" for="facingSelect">Available Camera Sensor</label>
-              <span id="camCountBadge" style="font-size: 0.68rem; font-family: var(--font-mono); color: var(--text-tertiary);">Detecting...</span>
+              <label class="input-label" for="facingSelect">Camera Lens Source</label>
+              <span id="detectedCameraNote" style="font-size: 0.68rem; color: #38bdf8; font-family: var(--font-mono);"></span>
             </div>
             <select id="facingSelect" class="custom-select" style="margin-top: 0.35rem;">
-              <option value="detecting">Detecting hardware sensors...</option>
+              <option value="detecting">Detecting hardware cameras...</option>
             </select>
           </div>
 
@@ -119,13 +139,18 @@
             </select>
           </div>
 
-          <!-- Microphone Hardware Detection Container -->
-          <div id="micContainer" style="margin-top: 0.35rem; padding-top: 0.5rem; border-top: 1px solid var(--border-light);">
-            <label class="checkbox-label" id="micCheckboxLabel" style="font-size: 0.8rem;">
-              <input type="checkbox" id="micAudioToggle">
-              <span id="micLabelText">Transmit Microphone Audio to Host</span>
-            </label>
-            <div id="detectedMicInfo" style="font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-tertiary); margin-top: 0.25rem; margin-left: 1.5rem;">Checking audio input...</div>
+          <!-- Dynamic Microphone Audio Section -->
+          <div id="micControlContainer" style="margin-top: 0.35rem;">
+            <div id="micAvailableRow">
+              <label class="checkbox-label" style="font-size: 0.8rem;">
+                <input type="checkbox" id="micAudioToggle">
+                <span id="micToggleLabel">Transmit Microphone Audio</span>
+              </label>
+              <div id="micSensorInfo" style="font-size: 0.68rem; color: var(--text-tertiary); font-family: var(--font-mono); margin-left: 1.6rem; margin-top: 0.15rem;">Internal Microphone</div>
+            </div>
+            <div id="noMicNotice" style="display: none; padding: 0.45rem 0.65rem; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--radius-sm); font-size: 0.74rem; color: #fca5a5;">
+              🎙️ No microphone detected on this device
+            </div>
           </div>
         </div>
 
@@ -147,7 +172,7 @@
     <!-- Active Viewfinder Floating Action Bar -->
     <div class="mobile-controls-bar" id="streamingControls" style="display: none;">
       <!-- Switch Camera Lens Button -->
-      <button class="cam-round-btn" id="btnFlipCamera" style="display: none;" title="Flip Camera Front/Back">
+      <button class="cam-round-btn" id="btnFlipCamera" title="Flip Camera Front/Back">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
@@ -172,8 +197,27 @@
         </svg>
       </button>
 
-      <!-- End This Camera Session Only Button -->
-      <button class="cam-round-btn danger" id="btnMobileEndSession" title="Disconnect This Camera Only">
+      <!-- Device Sleep Timer Button & Popover -->
+      <div class="cam-sleep-wrap" style="position: relative;">
+        <button class="cam-round-btn" id="btnCamSleepTimer" title="Configure Sleep Timer">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+          <span id="camSleepBadge" style="display: none; position: absolute; top: -6px; right: -6px; background: #8b5cf6; color: #fff; font-size: 0.6rem; padding: 1px 4px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono);"></span>
+        </button>
+        <div class="cam-sleep-popover" id="camSleepPopover" style="display: none;">
+          <div class="sleep-menu-header">Device Sleep Timer</div>
+          <button class="sleep-menu-item active" data-minutes="0">Off (Stay Awake)</button>
+          <button class="sleep-menu-item" data-minutes="5">5 Minutes</button>
+          <button class="sleep-menu-item" data-minutes="15">15 Minutes</button>
+          <button class="sleep-menu-item" data-minutes="30">30 Minutes</button>
+          <button class="sleep-menu-item" data-minutes="60">1 Hour</button>
+          <button class="sleep-menu-item" data-minutes="custom">Custom...</button>
+        </div>
+      </div>
+
+      <!-- End Session Button -->
+      <button class="cam-round-btn danger" id="btnMobileEndSession" title="End Session Immediately">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
