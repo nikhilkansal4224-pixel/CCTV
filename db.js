@@ -74,6 +74,8 @@ async function syncLocalUsersToMongo() {
   }
 }
 
+let memoryUsers = [];
+
 // User Model Operations
 async function findUserByUsername(username) {
   const cleanUsername = (username || '').trim().toLowerCase();
@@ -95,12 +97,12 @@ async function findUserByUsername(username) {
     try {
       const content = fs.readFileSync(USERS_FILE, 'utf8');
       const users = JSON.parse(content);
-      return users.find(u => u.username.toLowerCase() === cleanUsername) || null;
-    } catch (e) {
-      return null;
-    }
+      const found = users.find(u => u.username.toLowerCase() === cleanUsername);
+      if (found) return found;
+    } catch (e) {}
   }
-  return null;
+
+  return memoryUsers.find(u => u.username.toLowerCase() === cleanUsername) || null;
 }
 
 async function insertUser(newUser) {
@@ -130,18 +132,29 @@ async function getAllUsers() {
     }
   }
 
+  let list = [];
   if (fs.existsSync(USERS_FILE)) {
     try {
       const content = fs.readFileSync(USERS_FILE, 'utf8');
-      return JSON.parse(content);
-    } catch (e) {
-      return [];
+      list = JSON.parse(content) || [];
+    } catch (e) {}
+  }
+  for (const mu of memoryUsers) {
+    if (!list.some(u => u.username.toLowerCase() === mu.username.toLowerCase())) {
+      list.push(mu);
     }
   }
-  return [];
+  return list;
 }
 
 function updateLocalFile(newUser) {
+  const mIdx = memoryUsers.findIndex(u => u.username.toLowerCase() === newUser.username.toLowerCase());
+  if (mIdx >= 0) {
+    memoryUsers[mIdx] = newUser;
+  } else {
+    memoryUsers.push(newUser);
+  }
+
   try {
     let users = [];
     if (fs.existsSync(USERS_FILE)) {

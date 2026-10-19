@@ -387,10 +387,102 @@ async function setCameraSleepTimer(minutes) {
   window.showToast(active ? `Sleep Timer: ${numMinutes} minute${numMinutes === 1 ? '' : 's'}` : 'Sleep Timer turned Off');
 }
 
+let streamStartTime = null;
+let streamClockInterval = null;
+let audioContext = null;
+let audioAnalyser = null;
+let vuAnimFrame = null;
+
+function startStreamClock() {
+  streamStartTime = Date.now();
+  const clockEl = document.getElementById('streamClockDisplay');
+  const hud = document.getElementById('viewfinderStreamHud');
+  if (hud) hud.style.display = 'inline-flex';
+  if (streamClockInterval) clearInterval(streamClockInterval);
+  streamClockInterval = setInterval(() => {
+    const elapsedSec = Math.floor((Date.now() - streamStartTime) / 1000);
+    const hrs = Math.floor(elapsedSec / 3600);
+    const mins = Math.floor((elapsedSec % 3600) / 60);
+    const secs = elapsedSec % 60;
+    if (clockEl) {
+      clockEl.textContent = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+  }, 1000);
+}
+
+function startAudioMeter(stream) {
+  try {
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) return;
+    const meterEl = document.getElementById('audioVuMeter');
+    if (meterEl) meterEl.style.display = 'inline-flex';
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (audioContext) audioContext.close().catch(() => {});
+    audioContext = new AudioCtx();
+    const source = audioContext.createMediaStreamSource(stream);
+    audioAnalyser = audioContext.createAnalyser();
+    audioAnalyser.fftSize = 32;
+    source.connect(audioAnalyser);
+    const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+    const bars = meterEl ? meterEl.querySelectorAll('.vu-bar') : [];
+
+    function updateMeter() {
+      if (!audioAnalyser) return;
+      audioAnalyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+      const avg = sum / dataArray.length;
+      bars.forEach((bar, idx) => {
+        const factor = (idx + 1) * 3;
+        const h = Math.max(3, Math.min(14, (avg / 255) * factor * 5));
+        bar.style.height = `${h}px`;
+      });
+      vuAnimFrame = requestAnimationFrame(updateMeter);
+    }
+    updateMeter();
+  } catch (e) {
+    console.warn('Audio VU meter error:', e);
+  }
+}
+
 // Initial Boot
 async function initCamera() {
+  // Wire up location suggestion chips
+  document.querySelectorAll('.location-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const loc = chip.getAttribute('data-loc');
+      if (deviceNameInput) {
+        deviceNameInput.value = loc;
+        deviceName = loc;
+        sessionStorage.setItem('sentinel_device_name', loc);
+      }
+      document.querySelectorAll('.location-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
+
+  // Handle manual session token entry if missing from URL
   if (!sessionId) {
-    showError('Invalid or missing session ID in link. Please re-scan QR code.');
+    const sessionManualBox = document.getElementById('sessionManualBox');
+    if (sessionManualBox) sessionManualBox.style.display = 'block';
+    const manualBtn = document.getElementById('btnManualConnect');
+    const manualInput = document.getElementById('manualSessionInput');
+    if (manualBtn && manualInput) {
+      manualBtn.addEventListener('click', () => {
+        const val = manualInput.value.trim();
+        if (val) {
+          window.location.href = `/camera.html?session=${encodeURIComponent(val)}`;
+        }
+      });
+      manualInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const val = manualInput.value.trim();
+          if (val) window.location.href = `/camera.html?session=${encodeURIComponent(val)}`;
+        }
+      });
+    }
+    showError('Pairing key required. Please scan the QR code from the host monitor or enter the session key.');
     return;
   }
 
@@ -421,7 +513,7 @@ async function initCamera() {
   // Connect signaling
   connectWebSocket();
 
-  // User must explicitly click "Allow & Start Camera"
+  // User explicitly clicks "Add Camera of Current Device"
   btnAllowStart.addEventListener('click', handleUserConsentAndStart);
   btnFlipCamera.addEventListener('click', toggleCameraFacing);
   btnToggleTorch.addEventListener('click', toggleTorch);
@@ -657,6 +749,16 @@ async function handleUserConsentAndStart() {
     permissionOverlay.style.display = 'none';
     streamingControls.style.display = 'flex';
 
+    // Start live HUD clock & Audio VU meter
+    startStreamClock();
+    if (audioTrack) {
+      startAudioMeter(localStream);
+    }
+    const streamResBadge = document.getElementById('streamResBadge');
+    if (streamResBadge) {
+      streamResBadge.textContent = `${height}P • 30FPS`;
+    }
+
     // Store chosen device name
     if (deviceNameInput && deviceNameInput.value.trim()) {
       deviceName = deviceNameInput.value.trim();
@@ -693,7 +795,15 @@ async function handleUserConsentAndStart() {
   } catch (err) {
     console.error('Camera permission denied or error:', err);
     btnAllowStart.disabled = false;
-    btnAllowStart.innerHTML = `<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> Retry Allow & Start Camera`;
+    btnAllowStart.innerHTML = `
+      <span class="btn-hero-icon">
+        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v6m3-3H9" />
+        </svg>
+      </span>
+      <span>Retry Add Camera of Current Device</span>
+    `;
 
     let guidance = `Camera access error: ${err.message}`;
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {

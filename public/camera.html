@@ -2,49 +2,51 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>SENTINEL // Remote Camera Access</title>
   <meta name="description" content="Temporary WebRTC camera sender client with explicit hardware consent and end-to-end encryption.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="mobile-camera-page">
 
-  <!-- Mobile Top Header -->
+  <!-- Mobile Top Navigation Header -->
   <header class="mobile-header">
     <div class="brand">
-      <div class="brand-icon" style="width: 32px; height: 32px;">
+      <div class="brand-icon" style="width: 32px; height: 32px; border-radius: 8px;">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
         </svg>
       </div>
       <div class="brand-text">
-        <span class="brand-title" style="font-size: 0.95rem;">SENTINEL</span>
-        <span class="brand-tag">CAMERA SENDER</span>
+        <span class="brand-title" style="font-size: 0.95rem; font-weight: 800; letter-spacing: -0.01em;">SENTINEL</span>
+        <span class="brand-tag" style="font-size: 0.6rem; color: #a1a1aa;">CAMERA NODE</span>
       </div>
     </div>
 
-    <div style="display: flex; align-items: center; gap: 0.5rem;">
+    <div class="mobile-header-group">
+      <!-- Unique Device ID Badge -->
       <div class="mobile-device-pill" id="mobileDeviceIdBadge" title="Unique Device ID">
         <span class="badge-label">ID</span>
         <span id="headerDeviceId" style="font-family: var(--font-mono); font-weight: 700; color: #ffffff;">...</span>
       </div>
 
-      <div class="mobile-live-pill" id="mobileStatusIndicator">
+      <!-- Live / Standby Status Pill -->
+      <div class="mobile-live-pill waiting" id="mobileStatusIndicator">
         <span class="status-dot waiting" id="mobileStatusDot"></span>
-        <span id="mobileStatusText">INITIALIZING</span>
+        <span id="mobileStatusText">STANDBY</span>
       </div>
 
-      <!-- Sleep Timer indicator -->
-      <div class="mobile-live-pill" id="mobileSleepPill" style="display: none; border-color: rgba(139, 92, 246, 0.4); color: #c4b5fd;">
+      <!-- Sleep Timer Indicator (if active) -->
+      <div class="mobile-live-pill" id="mobileSleepPill" style="display: none; border-color: rgba(139, 92, 246, 0.45); color: #c4b5fd; background: rgba(139, 92, 246, 0.12);">
         <span>🌙</span>
-        <span id="mobileSleepText">--:--</span>
+        <span id="mobileSleepText" style="font-family: var(--font-mono); font-weight: 700;">--:--</span>
       </div>
 
-      <!-- Red cross button to terminate this device session immediately -->
-      <button class="cam-header-exit-btn" id="btnHeaderExit" title="Disconnect This Camera Only">
+      <!-- Exit Button (Disconnect this camera device only) -->
+      <button class="cam-header-exit-btn" id="btnHeaderExit" title="Disconnect This Camera">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
@@ -52,63 +54,60 @@
     </div>
   </header>
 
-  <!-- Fullscreen Camera Viewfinder -->
+  <!-- Fullscreen Camera Viewfinder Stage -->
   <main class="camera-viewfinder">
-    <!-- Local preview feed -->
+    <!-- Local Camera Video Stream -->
     <video id="cameraPreviewVideo" class="camera-preview-video" autoplay playsinline muted></video>
+
+    <!-- Cybernetic HUD Corner Brackets -->
+    <div class="hud-bracket tl"></div>
+    <div class="hud-bracket tr"></div>
+    <div class="hud-bracket bl"></div>
+    <div class="hud-bracket br"></div>
+
+    <!-- Live Telemetry Stream Strip (active when streaming) -->
+    <div class="viewfinder-stream-hud" id="viewfinderStreamHud" style="display: none;">
+      <span class="hud-live-tag">LIVE</span>
+      <span class="hud-timer" id="streamClockDisplay">00:00:00</span>
+      <span class="hud-res" id="streamResBadge">1080P • 30FPS</span>
+      <div class="audio-vu-meter" id="audioVuMeter" style="display: none;">
+        <span class="vu-bar"></span>
+        <span class="vu-bar"></span>
+        <span class="vu-bar"></span>
+        <span class="vu-bar"></span>
+      </div>
+    </div>
 
     <!-- In-Stream Device Watermark HUD -->
     <div class="viewfinder-device-hud" id="viewfinderDeviceHud" style="display: none;">
       <span class="hud-dot"></span>
       <span id="viewfinderDeviceId">CAM-XXXX</span>
-      <span style="color: var(--text-tertiary);">•</span>
+      <span style="color: var(--text-tertiary); margin: 0 2px;">•</span>
       <span id="viewfinderDeviceName">Front Door</span>
     </div>
 
-    <!-- Initial Permission & User Consent Modal -->
+    <!-- Recreated Modern Sliding Consent & Setup Sheet -->
     <div class="permission-overlay" id="permissionOverlay">
       <div class="permission-modal">
-        <div class="permission-shield">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-        </div>
+        <!-- Drag Handle Indicator -->
+        <div class="sheet-drag-handle"></div>
 
-        <h1 class="permission-title">Camera Access Request</h1>
-        <p class="permission-text">
-          A paired monitor is requesting permission to access this device as a live surveillance camera.
-        </p>
-
-        <!-- Unique Device ID Profile Box -->
-        <div class="device-identity-card">
-          <div class="device-identity-header">
-            <span class="device-identity-label">Unique Device Identifier</span>
-            <span class="device-id-code" id="deviceIdDisplay">CAM-XXXX</span>
-          </div>
-          <div style="margin-top: 0.6rem;">
-            <label class="input-label" for="deviceNameInput" style="font-size: 0.72rem;">Camera Name / Location (Optional)</label>
-            <input type="text" id="deviceNameInput" class="custom-input" placeholder="e.g. Front Door, Living Room, Backyard" maxlength="32" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; margin-top: 0.25rem;">
-          </div>
-        </div>
-
-        <!-- Privacy & Security Guarantee -->
-        <div class="consent-notice-box">
-          <div class="consent-notice-title">
-            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        <!-- Sheet Header -->
+        <div class="permission-header-bar">
+          <div class="permission-shield">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            <span>Strict Privacy & Consent</span>
           </div>
-          <p class="consent-notice-desc">
-            Your camera is <strong>never accessed automatically</strong>. Video is streamed peer-to-peer using encrypted WebRTC. Nothing is recorded or stored on any server.
-          </p>
+          <div>
+            <h1 class="permission-title">Camera Access Gateway</h1>
+            <p class="permission-text">Connect this device's camera into the live encrypted surveillance matrix.</p>
+          </div>
         </div>
-
-        <div id="errorNotice" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; font-size: 0.82rem; padding: 0.75rem; border-radius: var(--radius-sm); margin-bottom: 1.25rem;"></div>
 
         <!-- Hardware Platform & Sensor Detection Banner -->
         <div class="hardware-detect-banner" id="hardwareDetectBanner">
-          <div class="hardware-detect-icon" id="hardwareDetectIcon">💻</div>
+          <div class="hardware-detect-icon" id="hardwareDetectIcon">📱</div>
           <div class="hardware-detect-info">
             <span class="hardware-detect-tag">HARDWARE PLATFORM DETECTED</span>
             <div class="hardware-detect-title" id="hardwareDetectTitle">Detecting Device...</div>
@@ -119,8 +118,28 @@
           </div>
         </div>
 
-        <!-- Camera Device Options -->
+        <!-- Unique Device ID Card with Quick Location Chips -->
+        <div class="device-identity-card">
+          <div class="device-identity-header">
+            <span class="device-identity-label">Device Identifier</span>
+            <span class="device-id-code" id="deviceIdDisplay">CAM-XXXX</span>
+          </div>
+          <div style="margin-top: 0.65rem;">
+            <label class="input-label" for="deviceNameInput">Camera Label / Location</label>
+            <input type="text" id="deviceNameInput" class="custom-input" placeholder="e.g. Front Door, Living Room, Desk" maxlength="32" style="margin-top: 0.25rem;">
+          </div>
+          <!-- Quick Clickable Location Chips -->
+          <div class="location-chips-group">
+            <span class="location-chip" data-loc="Front Door">+ Front Door</span>
+            <span class="location-chip" data-loc="Living Room">+ Living Room</span>
+            <span class="location-chip" data-loc="Office Desk">+ Office Desk</span>
+            <span class="location-chip" data-loc="Backyard">+ Backyard</span>
+          </div>
+        </div>
+
+        <!-- Device Sensor Options -->
         <div class="device-options-group">
+          <!-- Camera Lens Selection with Quick Segmented Chips -->
           <div>
             <div style="display: flex; align-items: center; justify-content: space-between;">
               <label class="input-label" for="facingSelect">Camera Lens Source</label>
@@ -131,20 +150,30 @@
             </select>
           </div>
 
-          <div>
-            <label class="input-label" for="resolutionSelect">Stream Resolution</label>
-            <select id="resolutionSelect" class="custom-select" style="margin-top: 0.35rem;">
-              <option value="720" selected>720p HD (Smooth & Efficient)</option>
-              <option value="1080">1080p Full HD (High Detail)</option>
-            </select>
+          <!-- Stream Resolution & Quality -->
+          <div class="device-options-row">
+            <div>
+              <label class="input-label" for="resolutionSelect">Resolution</label>
+              <select id="resolutionSelect" class="custom-select" style="margin-top: 0.35rem;">
+                <option value="720">720p HD</option>
+                <option value="1080" selected>1080p FHD (Detail)</option>
+              </select>
+            </div>
+            <div>
+              <label class="input-label">Security</label>
+              <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: var(--radius-sm); padding: 0.65rem 0.75rem; font-size: 0.82rem; font-family: var(--font-mono); color: #10b981; margin-top: 0.35rem; display: flex; align-items: center; gap: 0.35rem;">
+                <span>🔒</span>
+                <span>WebRTC E2EE</span>
+              </div>
+            </div>
           </div>
 
           <!-- Dynamic Microphone Audio Section -->
-          <div id="micControlContainer" style="margin-top: 0.35rem;">
+          <div id="micControlContainer">
             <div id="micAvailableRow">
-              <label class="checkbox-label" style="font-size: 0.8rem;">
+              <label class="checkbox-label" style="font-size: 0.8rem; cursor: pointer;">
                 <input type="checkbox" id="micAudioToggle">
-                <span id="micToggleLabel">Transmit Microphone Audio</span>
+                <span id="micToggleLabel" style="font-weight: 600;">Transmit Microphone Audio</span>
               </label>
               <div id="micSensorInfo" style="font-size: 0.68rem; color: var(--text-tertiary); font-family: var(--font-mono); margin-left: 1.6rem; margin-top: 0.15rem;">Internal Microphone</div>
             </div>
@@ -154,74 +183,95 @@
           </div>
         </div>
 
-        <!-- Session Verification Badge -->
-        <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-tertiary); margin-bottom: 1.25rem;">
-          SESSION TOKEN: <span id="sessionTokenDisplay" style="color: #ffffff;">...</span>
+        <!-- Error Notification Banner (if any) -->
+        <div id="errorNotice" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; font-size: 0.82rem; padding: 0.75rem; border-radius: var(--radius-sm); margin-bottom: 1rem;"></div>
+
+        <!-- Manual Session Fallback (if session ID is missing or invalid) -->
+        <div class="session-manual-box" id="sessionManualBox" style="display: none;">
+          <div style="font-size: 0.72rem; font-weight: 700; color: #f59e0b; margin-bottom: 0.35rem;">PAIRING SESSION REQUIRED</div>
+          <div style="display: flex; gap: 0.4rem;">
+            <input type="text" id="manualSessionInput" class="custom-input" placeholder="Enter session token..." style="padding: 0.45rem 0.65rem; font-size: 0.8rem;">
+            <button class="btn btn-outline" id="btnManualConnect" style="padding: 0.45rem 0.85rem; font-size: 0.78rem; flex-shrink: 0;">Connect</button>
+          </div>
         </div>
 
-        <!-- Primary Explicit Consent Button -->
-        <button class="btn btn-primary btn-block btn-lg" id="btnAllowStart">
-          <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-          <span>Allow & Start Camera</span>
+        <!-- Session Verification Badge -->
+        <div style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-tertiary); margin-bottom: 1.15rem; text-align: center;">
+          GATEWAY SESSION: <span id="sessionTokenDisplay" style="color: #ffffff; font-weight: 700;">...</span>
+        </div>
+
+        <!-- ================================================================
+             PRIMARY HERO ACTION BUTTON: "ADD CAMERA OF CURRENT DEVICE"
+             ================================================================ -->
+        <button class="btn-hero-add-cam" id="btnAllowStart">
+          <span class="btn-hero-icon">
+            <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v6m3-3H9" />
+            </svg>
+          </span>
+          <span>Add Camera of Current Device</span>
         </button>
+        <span class="btn-hero-subtext" style="text-align: center;">Explicit Hardware Consent • Peer-to-Peer Encrypted</span>
+
       </div>
     </div>
 
-    <!-- Active Viewfinder Floating Action Bar -->
+    <!-- Active Viewfinder Floating Action Dock -->
     <div class="mobile-controls-bar" id="streamingControls" style="display: none;">
-      <!-- Switch Camera Lens Button -->
-      <button class="cam-round-btn" id="btnFlipCamera" title="Flip Camera Front/Back">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-      </button>
-
-      <!-- Toggle Microphone Audio Button -->
-      <button class="cam-round-btn" id="btnToggleMic" style="display: none;" title="Mute/Unmute Mic">
-        <svg id="micIcon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-        </svg>
-      </button>
-
-      <!-- Digital Zoom Button -->
-      <button class="cam-round-btn" id="btnZoom" title="Toggle Digital Zoom">
-        <span style="font-size: 0.8rem; font-weight: 700; font-family: var(--font-mono);" id="zoomLabel">1x</span>
-      </button>
-
-      <!-- Torch Button (if supported) -->
-      <button class="cam-round-btn" id="btnToggleTorch" style="display: none;" title="Toggle Flashlight">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      </button>
-
-      <!-- Device Sleep Timer Button & Popover -->
-      <div class="cam-sleep-wrap" style="position: relative;">
-        <button class="cam-round-btn" id="btnCamSleepTimer" title="Configure Sleep Timer">
+      <div class="mobile-dock-capsule">
+        <!-- Switch Camera Lens Button -->
+        <button class="cam-round-btn" id="btnFlipCamera" title="Flip Camera Front/Back">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          <span id="camSleepBadge" style="display: none; position: absolute; top: -6px; right: -6px; background: #8b5cf6; color: #fff; font-size: 0.6rem; padding: 1px 4px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono);"></span>
         </button>
-        <div class="cam-sleep-popover" id="camSleepPopover" style="display: none;">
-          <div class="sleep-menu-header">Device Sleep Timer</div>
-          <button class="sleep-menu-item active" data-minutes="0">Off (Stay Awake)</button>
-          <button class="sleep-menu-item" data-minutes="5">5 Minutes</button>
-          <button class="sleep-menu-item" data-minutes="15">15 Minutes</button>
-          <button class="sleep-menu-item" data-minutes="30">30 Minutes</button>
-          <button class="sleep-menu-item" data-minutes="60">1 Hour</button>
-          <button class="sleep-menu-item" data-minutes="custom">Custom...</button>
-        </div>
-      </div>
 
-      <!-- End Session Button -->
-      <button class="cam-round-btn danger" id="btnMobileEndSession" title="End Session Immediately">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+        <!-- Toggle Microphone Audio Button -->
+        <button class="cam-round-btn" id="btnToggleMic" style="display: none;" title="Mute/Unmute Mic">
+          <svg id="micIcon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+        </button>
+
+        <!-- Digital Zoom Button -->
+        <button class="cam-round-btn" id="btnZoom" title="Toggle Digital Zoom">
+          <span style="font-size: 0.8rem; font-weight: 700; font-family: var(--font-mono);" id="zoomLabel">1x</span>
+        </button>
+
+        <!-- Torch Button (if supported) -->
+        <button class="cam-round-btn" id="btnToggleTorch" style="display: none;" title="Toggle Flashlight">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </button>
+
+        <!-- Device Sleep Timer Button & Popover -->
+        <div class="cam-sleep-wrap" style="position: relative;">
+          <button class="cam-round-btn" id="btnCamSleepTimer" title="Configure Sleep Timer">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+            <span id="camSleepBadge" style="display: none; position: absolute; top: -6px; right: -6px; background: #8b5cf6; color: #fff; font-size: 0.6rem; padding: 1px 4px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono);"></span>
+          </button>
+          <div class="cam-sleep-popover" id="camSleepPopover" style="display: none;">
+            <div class="sleep-menu-header">Device Sleep Timer</div>
+            <button class="sleep-menu-item active" data-minutes="0">Off (Stay Awake)</button>
+            <button class="sleep-menu-item" data-minutes="5">5 Minutes</button>
+            <button class="sleep-menu-item" data-minutes="15">15 Minutes</button>
+            <button class="sleep-menu-item" data-minutes="30">30 Minutes</button>
+            <button class="sleep-menu-item" data-minutes="60">1 Hour</button>
+            <button class="sleep-menu-item" data-minutes="custom">Custom...</button>
+          </div>
+        </div>
+
+        <!-- End Session Button -->
+        <button class="cam-round-btn danger" id="btnMobileEndSession" title="End Session Immediately">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
     </div>
 
   </main>

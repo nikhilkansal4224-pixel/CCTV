@@ -127,24 +127,47 @@ async function loadNetworkInfo() {
     const res = await fetch('/api/network-info');
     const data = await res.json();
     
-    if (networkHostSelect && data.allIps) {
+    if (networkHostSelect) {
       networkHostSelect.innerHTML = '';
-      data.allIps.forEach(ip => {
-        const opt = document.createElement('option');
-        opt.value = ip;
-        opt.textContent = ip === 'localhost' ? 'Localhost (This PC)' : `LAN: ${ip}`;
-        if (ip !== 'localhost' && !selectedHost.includes('.')) {
-          opt.selected = true;
-          selectedHost = ip;
-        } else if (ip === selectedHost) {
-          opt.selected = true;
-        }
-        networkHostSelect.appendChild(opt);
-      });
+
+      const currentHostname = window.location.hostname;
+      const isCloudDeployment = currentHostname && currentHostname !== 'localhost' && currentHostname !== '127.0.0.1' && !currentHostname.match(/^\d+\.\d+\.\d+\.\d+$/);
+
+      if (isCloudDeployment || data.isVercel) {
+        const cloudHostVal = window.location.host || data.currentHost;
+        const cloudOpt = document.createElement('option');
+        cloudOpt.value = cloudHostVal;
+        cloudOpt.textContent = `Cloud / Vercel (${cloudHostVal})`;
+        cloudOpt.selected = true;
+        selectedHost = cloudHostVal;
+        networkHostSelect.appendChild(cloudOpt);
+      }
+
+      if (data.allIps) {
+        data.allIps.forEach(ip => {
+          const opt = document.createElement('option');
+          opt.value = ip;
+          opt.textContent = ip === 'localhost' ? 'Localhost (This PC)' : `LAN: ${ip}`;
+          if (!isCloudDeployment && !data.isVercel) {
+            if (ip !== 'localhost' && !selectedHost.includes('.')) {
+              opt.selected = true;
+              selectedHost = ip;
+            } else if (ip === selectedHost) {
+              opt.selected = true;
+            }
+          }
+          networkHostSelect.appendChild(opt);
+        });
+      }
+
       if (!selectedHost && data.localIp) {
         selectedHost = data.localIp;
         networkHostSelect.value = selectedHost;
       }
+    }
+
+    if (window.location.protocol === 'https:' || data.currentProtocol === 'https') {
+      selectedProtocol = 'https';
     }
 
     if (networkProtocolSelect) {
@@ -718,7 +741,7 @@ function disconnectDevice(deviceId) {
   const name = peer ? peer.deviceName : deviceId;
 
   if (confirm(`Disconnect camera [${name}] from surveillance matrix?`)) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (!peer?.isLocalHostCam && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'disconnect-device',
         sessionId: currentSessionId,
@@ -726,7 +749,7 @@ function disconnectDevice(deviceId) {
       }));
     }
     teardownCameraPeer(deviceId);
-    logEvent('SYS', `Camera kicked by operator: ${name} [${deviceId}]`);
+    logEvent('SYS', `Camera disconnected: ${name} [${deviceId}]`);
     showToast(`Disconnected camera ${name}`);
   }
 }
@@ -735,6 +758,11 @@ function teardownCameraPeer(deviceId) {
   if (!cameraPeers.has(deviceId)) return;
   const peer = cameraPeers.get(deviceId);
 
+  if (peer.stream) {
+    try {
+      peer.stream.getTracks().forEach(t => t.stop());
+    } catch (e) {}
+  }
   if (peer.statsMonitor) peer.statsMonitor.stop();
   if (peer.pc) {
     try { peer.pc.close(); } catch (e) {}
@@ -1047,6 +1075,9 @@ function cleanupCurrentSession() {
   if (timerInterval) clearInterval(timerInterval);
 
   cameraPeers.forEach(peer => {
+    if (peer.stream) {
+      try { peer.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    }
     if (peer.statsMonitor) peer.statsMonitor.stop();
     if (peer.pc) {
       try { peer.pc.close(); } catch (e) {}
@@ -1229,11 +1260,98 @@ function setupEventListeners() {
     });
   }
 
+  // Host Add Local Camera of Current Device buttons
+  const btnHostAddLocalCamera = document.getElementById('btnHostAddLocalCamera');
+  const btnQuickAddHostCam = document.getElementById('btnQuickAddHostCam');
+  const btnDockAddLocalCam = document.getElementById('btnDockAddLocalCam');
+
+  if (btnHostAddLocalCamera) {
+    btnHostAddLocalCamera.addEventListener('click', () => {
+      addCurrentDeviceCameraToMatrix();
+    });
+  }
+  if (btnQuickAddHostCam) {
+    btnQuickAddHostCam.addEventListener('click', () => {
+      addCurrentDeviceCameraToMatrix();
+    });
+  }
+  if (btnDockAddLocalCam) {
+    btnDockAddLocalCam.addEventListener('click', () => {
+      addCurrentDeviceCameraToMatrix();
+    });
+  }
+
   // Dismiss dropdowns on outside click
   document.addEventListener('click', () => {
     if (masterSleepTimerMenu) masterSleepTimerMenu.style.display = 'none';
     document.querySelectorAll('.tile-sleep-menu').forEach(m => m.style.display = 'none');
   });
+}
+
+// Add camera of current device directly to host matrix
+async function addCurrentDeviceCameraToMatrix() {
+  const deviceId = 'LOCAL-HOST-CAM';
+  if (cameraPeers.has(deviceId)) {
+    showToast('Current device camera is already active in matrix.');
+    focusCamera(deviceId);
+    return;
+  }
+
+  try {
+    showToast('Requesting local camera access...');
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: true
+      });
+    } catch (err) {
+      // Audio or strict video constraint might have failed; try fallback to video only
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+      });
+    }
+
+    const peer = getOrCreateCameraTile(deviceId, 'Host Station (This Device)');
+    peer.isLocalHostCam = true;
+    peer.stream = stream;
+    peer.videoEl.srcObject = stream;
+    peer.videoEl.muted = true; // Always muted locally to prevent acoustic feedback howl
+    peer.isMuted = true;
+    peer.status = 'connected';
+
+    const waitingOverlay = peer.cardEl.querySelector('.tile-waiting-overlay');
+    if (waitingOverlay) waitingOverlay.style.display = 'none';
+    const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
+    if (liveBadge) liveBadge.style.display = 'inline-flex';
+    const hud = peer.cardEl.querySelector('.tile-hud');
+    if (hud) hud.style.display = 'flex';
+
+    peer.videoEl.addEventListener('loadedmetadata', () => {
+      const resEl = peer.cardEl.querySelector('.tile-res');
+      if (resEl) resEl.textContent = `${peer.videoEl.videoWidth}x${peer.videoEl.videoHeight}`;
+      const fpsEl = peer.cardEl.querySelector('.tile-fps');
+      if (fpsEl) fpsEl.textContent = '30';
+      const rateEl = peer.cardEl.querySelector('.tile-rate');
+      if (rateEl) rateEl.textContent = 'DIRECT';
+    }, { once: true });
+
+    updateCameraMatrixCounts();
+    logEvent('SYS', 'Added current device camera to local surveillance matrix');
+    showToast('Camera of current device added successfully!');
+  } catch (err) {
+    console.error('Failed to access current device camera:', err);
+    showToast('Camera access denied or unavailable: ' + (err.message || err.name));
+  }
+}
+
+function stopCurrentDeviceCamera() {
+  const deviceId = 'LOCAL-HOST-CAM';
+  if (cameraPeers.has(deviceId)) {
+    teardownCameraPeer(deviceId);
+    showToast('Current device camera removed');
+  }
 }
 
 function toggleGlobalVideoRecording() {

@@ -114,6 +114,18 @@
             Scan the temporary QR code with <strong>one or multiple smartphones or secondary devices</strong> to stream live multi-angle video to this matrix.
           </p>
 
+          <!-- Add Camera of Current Device Direct Action -->
+          <div class="standby-actions-group">
+            <button class="btn-host-add-cam" id="btnHostAddLocalCamera" title="Add Current Device's Camera to Matrix">
+              <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v6m3-3H9" />
+              </svg>
+              <span>Add Camera of Current Device</span>
+            </button>
+            <span class="standby-or-tag">OR SCAN QR CODE WITH SMARTPHONE</span>
+          </div>
+
           <div class="step-checklist">
             <div class="step-item active" id="step1">
               <span class="step-num">1</span>
@@ -179,6 +191,14 @@
           <button class="btn-icon" id="btnFullscreen" title="Fullscreen">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+            </svg>
+          </button>
+
+          <!-- Add Current Device Camera Quick Toolbar Button -->
+          <button class="btn-icon" id="btnQuickAddHostCam" title="Add Camera of Current Device to Matrix" style="border-color: rgba(255, 255, 255, 0.35);">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v6m3-3H9" />
             </svg>
           </button>
         </div>
@@ -300,6 +320,15 @@
               <span>New QR</span>
             </button>
           </div>
+
+          <!-- Add Current Device Camera Action in Sidebar -->
+          <button class="btn btn-outline" id="btnDockAddLocalCam" title="Add Current Device's Camera to Matrix" style="width: 100%; margin-top: 0.6rem; border-color: rgba(255, 255, 255, 0.25);">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v6m3-3H9" />
+            </svg>
+            <span>+ Add Current Device Camera</span>
+          </button>
         </div>
       </div>
 

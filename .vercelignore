@@ -1,0 +1,11 @@
+# Vercel Deployment Ignore File
+ssl/
+*.pem
+*.crt
+*.key
+*.log
+.DS_Store
+.git
+.vscode
+test-everything.js
+test-signaling.js

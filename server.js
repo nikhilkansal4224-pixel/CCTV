@@ -15,12 +15,20 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
+// Public directory resolution supporting Vercel serverless bundles and local development
+const PUBLIC_DIR = path.join(process.cwd(), 'public');
+
 // Protected Host Dashboard Route (requires authentication)
 app.get(['/', '/index.html'], auth.requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const primaryPath = path.join(PUBLIC_DIR, 'index.html');
+  if (fs.existsSync(primaryPath)) {
+    return res.sendFile(primaryPath);
+  }
+  return res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Serve public static assets (login.html, camera.html, css, js)
+app.use(express.static(PUBLIC_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Port configuration
@@ -196,7 +204,43 @@ function cleanupSessions() {
     }
   }
 }
-setInterval(cleanupSessions, 1000); // 1-second cadence for responsive sleep timers
+
+function buildBaseUrl(req, hostParam, protocolParam) {
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const hostHeader = forwardedHost || req.headers.host || '';
+  const isVercel = Boolean(process.env.VERCEL || hostHeader.includes('vercel.app'));
+  const proto = protocolParam || req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+
+  const targetHost = hostParam || req.query.host;
+
+  if (targetHost) {
+    if (targetHost.includes(':') || targetHost.includes('vercel.app') || (isVercel && !targetHost.match(/^\d+\.\d+\.\d+\.\d+$/) && targetHost !== 'localhost')) {
+      return `${proto}://${targetHost}`;
+    }
+    const port = proto === 'https' ? HTTPS_PORT : HTTP_PORT;
+    return `${proto}://${targetHost}:${port}`;
+  }
+
+  if (isVercel || (hostHeader && !hostHeader.includes('localhost') && !hostHeader.includes('127.0.0.1') && !/^\d+\.\d+\.\d+\.\d+/.test(hostHeader))) {
+    return `${proto}://${hostHeader}`;
+  }
+
+  const host = getLocalIp(req);
+  const port = proto === 'https' ? HTTPS_PORT : HTTP_PORT;
+  return `${proto}://${host}:${port}`;
+}
+
+// Serverless-friendly cleanup invocation
+if (!process.env.VERCEL) {
+  setInterval(cleanupSessions, 1000); // 1-second cadence for responsive sleep timers
+}
+
+app.use((req, res, next) => {
+  if (process.env.VERCEL) {
+    cleanupSessions();
+  }
+  next();
+});
 
 // --- Authentication Endpoints ---
 
@@ -284,8 +328,13 @@ app.get('/api/auth/me', auth.optionalAuth, (req, res) => {
 app.get('/api/network-info', (req, res) => {
   const localIp = getLocalIp(req);
   const allIps = getAllIps();
-  const hostHeader = req.get('host') || '';
-  const isHttps = req.secure || req.protocol === 'https';
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const hostHeader = forwardedHost || req.get('host') || 'localhost';
+  const isVercel = Boolean(process.env.VERCEL || hostHeader.includes('vercel.app'));
+  const isHttps = req.secure || req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https';
+
+  const httpUrl = isVercel ? `https://${hostHeader}` : `http://${localIp}:${HTTP_PORT}`;
+  const httpsUrl = isVercel ? `https://${hostHeader}` : `https://${localIp}:${HTTPS_PORT}`;
 
   res.json({
     localIp,
@@ -294,8 +343,9 @@ app.get('/api/network-info', (req, res) => {
     httpsPort: HTTPS_PORT,
     currentHost: hostHeader,
     currentProtocol: isHttps ? 'https' : 'http',
-    httpUrl: `http://${localIp}:${HTTP_PORT}`,
-    httpsUrl: `https://${localIp}:${HTTPS_PORT}`,
+    httpUrl,
+    httpsUrl,
+    isVercel,
   });
 });
 
@@ -303,11 +353,9 @@ app.get('/api/network-info', (req, res) => {
 app.post('/api/sessions/create', auth.requireAuth, (req, res) => {
   const session = createSession();
   session.operator = req.user.username;
-  const host = req.query.host || getLocalIp(req);
-  const preferProtocol = req.query.protocol || (req.secure ? 'https' : 'http');
-  const port = preferProtocol === 'https' ? HTTPS_PORT : HTTP_PORT;
-  const baseUrl = `${preferProtocol}://${host}:${port}`;
+  const baseUrl = buildBaseUrl(req, req.query.host, req.query.protocol);
   const cameraUrl = `${baseUrl}/camera.html?session=${session.id}`;
+  const preferProtocol = req.query.protocol || (req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http');
 
   res.json({
     sessionId: session.id,
@@ -316,7 +364,7 @@ app.post('/api/sessions/create', auth.requireAuth, (req, res) => {
     ttlSeconds: Math.floor(SESSION_TTL_MS / 1000),
     cameraUrl,
     status: session.status,
-    host,
+    host: req.query.host || getLocalIp(req),
     protocol: preferProtocol,
     operator: req.user.username,
   });
@@ -365,10 +413,8 @@ app.get('/api/sessions/:id/qr', async (req, res) => {
     return res.status(404).send('Session expired or not found');
   }
 
-  const host = req.query.host || getLocalIp(req);
-  const protocol = req.query.protocol || 'https';
-  const port = protocol === 'https' ? HTTPS_PORT : HTTP_PORT;
-  const cameraUrl = `${protocol}://${host}:${port}/camera.html?session=${session.id}`;
+  const baseUrl = buildBaseUrl(req, req.query.host, req.query.protocol);
+  const cameraUrl = `${baseUrl}/camera.html?session=${session.id}`;
 
   try {
     const qrSvg = await QRCode.toString(cameraUrl, {
@@ -1043,10 +1089,8 @@ async function start() {
   });
 }
 
-// Vercel serverless export support
-if (process.env.VERCEL) {
-  module.exports = app;
-} else {
+// Standalone execution or Vercel serverless export
+if (require.main === module && !process.env.VERCEL) {
   start().catch((err) => {
     console.error('Fatal startup error:', err);
     process.exit(1);

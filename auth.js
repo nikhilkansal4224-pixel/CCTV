@@ -7,20 +7,39 @@ const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SECRET_FILE = path.join(DATA_DIR, 'auth_secret.key');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  // Ignored on read-only environments (e.g. Vercel serverless)
 }
 
+let inMemorySecret = null;
 // Ensure persistent HMAC secret key
 function getSecretKey() {
   if (process.env.AUTH_SECRET) {
     return process.env.AUTH_SECRET;
   }
-  if (fs.existsSync(SECRET_FILE)) {
-    return fs.readFileSync(SECRET_FILE, 'utf8').trim();
+  if (inMemorySecret) {
+    return inMemorySecret;
   }
+  try {
+    if (fs.existsSync(SECRET_FILE)) {
+      return fs.readFileSync(SECRET_FILE, 'utf8').trim();
+    }
+  } catch (e) {}
+
   const secret = crypto.randomBytes(32).toString('hex');
-  fs.writeFileSync(SECRET_FILE, secret, 'utf8');
+  inMemorySecret = secret;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SECRET_FILE, secret, 'utf8');
+  } catch (e) {
+    // Read-only filesystem
+  }
   return secret;
 }
 
@@ -52,22 +71,28 @@ db.connectDB().catch(err => {
 
 // Seed default users file if needed
 function initDefaultUsersFile() {
-  if (!fs.existsSync(USERS_FILE)) {
-    const defaultSalt = crypto.randomBytes(16).toString('hex');
-    const { hash } = hashPassword('password123', defaultSalt);
-    const defaultUsers = [
-      {
-        id: 'user_admin',
-        username: 'admin',
-        hash,
-        salt: defaultSalt,
-        role: 'Chief Security Operator',
-        displayName: 'Administrator',
-        createdAt: new Date().toISOString(),
-      },
-    ];
-    fs.writeFileSync(USERS_FILE, JSON.stringify(defaultUsers, null, 2), 'utf8');
-    return defaultUsers;
+  try {
+    if (!fs.existsSync(USERS_FILE)) {
+      const defaultSalt = crypto.randomBytes(16).toString('hex');
+      const { hash } = hashPassword('password123', defaultSalt);
+      const defaultUsers = [
+        {
+          id: 'user_admin',
+          username: 'admin',
+          hash,
+          salt: defaultSalt,
+          role: 'Chief Security Operator',
+          displayName: 'Administrator',
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      try {
+        fs.writeFileSync(USERS_FILE, JSON.stringify(defaultUsers, null, 2), 'utf8');
+      } catch (e) {}
+      return defaultUsers;
+    }
+  } catch (err) {
+    // Read-only filesystem fallback
   }
 }
 initDefaultUsersFile();
