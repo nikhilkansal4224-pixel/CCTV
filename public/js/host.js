@@ -7,6 +7,14 @@ let ws = null;
 let selectedProtocol = window.location.protocol === 'https:' ? 'https' : 'https';
 let selectedHost = window.location.hostname;
 
+// Persistent Host Viewer Identity for multi-device sync
+let hostViewerId = sessionStorage.getItem('sentinel_host_viewer_id');
+if (!hostViewerId) {
+  hostViewerId = 'HOST-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  sessionStorage.setItem('sentinel_host_viewer_id', hostViewerId);
+}
+let currentUserId = null;
+
 // Multi-Camera Peer Storage: deviceId -> CameraPeer
 // CameraPeer: { deviceId, deviceName, pc, stream, videoEl, cardEl, statsMonitor, stats, isMuted, status }
 const cameraPeers = new Map();
@@ -98,6 +106,11 @@ async function checkAuthAndProfile() {
     }
     const data = await res.json();
     if (data.user) {
+      currentUserId = data.user.userId || ('USR-' + (data.user.id || 'ADMIN').replace('user_', '').substring(0, 8).toUpperCase());
+      const userIdChip = document.getElementById('userIdChip');
+      if (userIdChip) {
+        userIdChip.textContent = currentUserId;
+      }
       if (userNameEl) userNameEl.textContent = data.user.displayName || data.user.username;
       if (userRoleEl) userRoleEl.textContent = data.user.role || 'Operator';
       if (userAvatarEl) {
@@ -178,7 +191,7 @@ async function loadNetworkInfo() {
   }
 }
 
-async function createNewSession() {
+async function createNewSession(forceNew = false) {
   cleanupCurrentSession();
 
   updateStatus('waiting', 'GENERATING MATRIX SESSION...');
@@ -187,6 +200,7 @@ async function createNewSession() {
     const queryParams = new URLSearchParams({
       protocol: selectedProtocol,
       host: selectedHost,
+      forceNew: forceNew ? 'true' : 'false',
     });
 
     const res = await fetch(`/api/sessions/create?${queryParams.toString()}`, { method: 'POST' });
@@ -194,6 +208,11 @@ async function createNewSession() {
 
     currentSessionId = data.sessionId;
     sessionExpiresAt = data.expiresAt;
+    if (data.userId && !currentUserId) {
+      currentUserId = data.userId;
+      const userIdChip = document.getElementById('userIdChip');
+      if (userIdChip) userIdChip.textContent = currentUserId;
+    }
 
     sessionUrlInput.value = data.cameraUrl;
     btnOpenLink.href = data.cameraUrl;
@@ -575,6 +594,8 @@ function getOrCreateCameraTile(deviceId, deviceName) {
 
     <div class="tile-video-wrap">
       <video class="tile-video" autoplay playsinline muted></video>
+      <!-- Real-Time AI Entity Detection Overlay Canvas -->
+      <canvas class="tile-canvas-ai"></canvas>
 
       <!-- Waiting / Connecting Overlay -->
       <div class="tile-waiting-overlay">
@@ -595,10 +616,18 @@ function getOrCreateCameraTile(deviceId, deviceName) {
         <span>RES: <strong class="tile-res">--</strong></span>
         <span>RATE: <strong class="tile-rate">--</strong></span>
       </div>
+
+      <!-- AI Entity Detection Telemetry Pill -->
+      <div class="tile-entity-pill" style="display: none;">
+        <span class="ai-pill-dot"></span>
+        <span class="ai-pill-text">AI ACTIVE</span>
+      </div>
     </div>
   `;
 
   const videoEl = cardEl.querySelector('.tile-video');
+  const canvasAi = cardEl.querySelector('.tile-canvas-ai');
+  const entityPill = cardEl.querySelector('.tile-entity-pill');
   const btnSnap = cardEl.querySelector('.btn-tile-snap');
   const btnMute = cardEl.querySelector('.btn-tile-mute');
   const btnFocus = cardEl.querySelector('.btn-tile-focus');
@@ -665,6 +694,8 @@ function getOrCreateCameraTile(deviceId, deviceName) {
     pc: null,
     stream: null,
     videoEl,
+    canvasAi,
+    entityPill,
     cardEl,
     statsMonitor: null,
     stats: { fps: 0, bitrate: 0, width: 0, height: 0, rtt: 0 },
@@ -845,6 +876,8 @@ function connectWebSocket(sessionId) {
       type: 'join',
       sessionId,
       role: 'host',
+      hostViewerId,
+      userId: currentUserId,
     }));
   };
 
@@ -996,6 +1029,7 @@ async function handleRemoteOffer(deviceId, sdp) {
         type: 'ice-candidate',
         sessionId: currentSessionId,
         deviceId,
+        hostViewerId,
         candidate: event.candidate,
       }));
     }
@@ -1054,6 +1088,7 @@ async function handleRemoteOffer(deviceId, sdp) {
       type: 'answer',
       sessionId: currentSessionId,
       deviceId,
+      hostViewerId,
       sdp: pc.localDescription,
     }));
   }
@@ -1122,9 +1157,9 @@ function setupEventListeners() {
     }
   });
 
-  // New QR / Session Button
+  // New QR / Session Button (Forces generation of fresh session token)
   btnNewSession.addEventListener('click', () => {
-    createNewSession();
+    createNewSession(true);
   });
 
   // View Mode Buttons (Grid vs Focus)
@@ -1281,11 +1316,308 @@ function setupEventListeners() {
     });
   }
 
+  // AI Entity Detection Toolbar Button and Menu
+  const btnToggleEntityDetect = document.getElementById('btnToggleEntityDetect');
+  const aiDetectMenu = document.getElementById('aiDetectMenu');
+  const btnAiToggleState = document.getElementById('btnAiToggleState');
+  const btnAiAudioChime = document.getElementById('btnAiAudioChime');
+
+  if (btnToggleEntityDetect) {
+    btnToggleEntityDetect.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (aiDetectMenu) {
+        aiDetectMenu.style.display = aiDetectMenu.style.display === 'block' ? 'none' : 'block';
+      }
+    });
+  }
+
+  if (btnAiToggleState) {
+    btnAiToggleState.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleEntityDetection();
+    });
+  }
+
+  if (btnAiAudioChime) {
+    btnAiAudioChime.addEventListener('click', (e) => {
+      e.stopPropagation();
+      aiDetectorState.audioChime = !aiDetectorState.audioChime;
+      btnAiAudioChime.classList.toggle('active', aiDetectorState.audioChime);
+      updateAiUi();
+      showToast(aiDetectorState.audioChime ? 'Detection audio chime ON' : 'Detection audio chime OFF');
+    });
+  }
+
+  if (aiDetectMenu) {
+    aiDetectMenu.querySelectorAll('[data-filter]').forEach(filterBtn => {
+      filterBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        aiDetectMenu.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+        filterBtn.classList.add('active');
+        aiDetectorState.filter = filterBtn.getAttribute('data-filter');
+        showToast(`AI Entity Filter: ${aiDetectorState.filter.toUpperCase()}`);
+        logEvent('AI', `Filter updated to: ${aiDetectorState.filter.toUpperCase()}`);
+      });
+    });
+  }
+
   // Dismiss dropdowns on outside click
   document.addEventListener('click', () => {
     if (masterSleepTimerMenu) masterSleepTimerMenu.style.display = 'none';
+    if (aiDetectMenu) aiDetectMenu.style.display = 'none';
     document.querySelectorAll('.tile-sleep-menu').forEach(m => m.style.display = 'none');
   });
+}
+
+// --- Real-Time AI Entity Detection Engine (COCO-SSD & Neural Vision) ---
+const aiDetectorState = {
+  enabled: false,
+  model: null,
+  loading: false,
+  filter: 'all', // 'all' | 'person' | 'vehicle' | 'animal'
+  audioChime: true,
+  lastChimeTime: 0,
+  intervalId: null,
+};
+
+async function initAiModel() {
+  if (aiDetectorState.model) return aiDetectorState.model;
+  if (window.cocoSsd) {
+    aiDetectorState.loading = true;
+    updateAiUi();
+    try {
+      aiDetectorState.model = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      aiDetectorState.loading = false;
+      updateAiUi();
+      showToast('AI Entity Detection model initialized');
+      logEvent('AI', 'Neural Vision Model loaded (COCO-SSD MobileNetV2)');
+      return aiDetectorState.model;
+    } catch (e) {
+      console.warn('AI model load warning, fallback active:', e);
+      aiDetectorState.loading = false;
+      updateAiUi();
+    }
+  }
+  return null;
+}
+
+function updateAiUi() {
+  const btn = document.getElementById('btnToggleEntityDetect');
+  const badge = document.getElementById('aiDetectBadge');
+  const stateLabel = document.getElementById('aiStateLabel');
+  const chimeLabel = document.getElementById('aiChimeLabel');
+
+  if (btn) {
+    btn.classList.toggle('active', aiDetectorState.enabled);
+    btn.classList.toggle('loading', aiDetectorState.loading);
+  }
+  if (badge) {
+    badge.textContent = aiDetectorState.loading ? 'AI LOAD' : (aiDetectorState.enabled ? 'AI LIVE' : 'AI OFF');
+  }
+  if (stateLabel) {
+    stateLabel.textContent = aiDetectorState.enabled ? 'ACTIVE' : 'OFF';
+    stateLabel.style.color = aiDetectorState.enabled ? '#10b981' : '#ef4444';
+  }
+  if (chimeLabel) {
+    chimeLabel.textContent = aiDetectorState.audioChime ? 'ON' : 'OFF';
+    chimeLabel.style.color = aiDetectorState.audioChime ? '#10b981' : '#ef4444';
+  }
+}
+
+async function toggleEntityDetection() {
+  aiDetectorState.enabled = !aiDetectorState.enabled;
+  updateAiUi();
+
+  if (aiDetectorState.enabled) {
+    showToast('AI Entity Detection activated');
+    logEvent('AI', `AI Entity Vision scanning active (Filter: ${aiDetectorState.filter.toUpperCase()})`);
+    if (!aiDetectorState.model && !aiDetectorState.loading) {
+      initAiModel();
+    }
+    startDetectionLoop();
+  } else {
+    stopDetectionLoop();
+    clearAllAiCanvases();
+    showToast('AI Entity Detection disabled');
+    logEvent('AI', 'AI Entity Vision paused');
+  }
+}
+
+function startDetectionLoop() {
+  if (aiDetectorState.intervalId) clearInterval(aiDetectorState.intervalId);
+  aiDetectorState.intervalId = setInterval(scanAllCameraFeeds, 280); // ~3.5 fps inference per camera for optimal smoothness & low CPU
+}
+
+function stopDetectionLoop() {
+  if (aiDetectorState.intervalId) {
+    clearInterval(aiDetectorState.intervalId);
+    aiDetectorState.intervalId = null;
+  }
+}
+
+function clearAllAiCanvases() {
+  cameraPeers.forEach(peer => {
+    if (peer.canvasAi) {
+      const ctx = peer.canvasAi.getContext('2d');
+      ctx.clearRect(0, 0, peer.canvasAi.width, peer.canvasAi.height);
+    }
+    if (peer.entityPill) {
+      peer.entityPill.style.display = 'none';
+    }
+  });
+}
+
+async function scanAllCameraFeeds() {
+  if (!aiDetectorState.enabled) return;
+
+  for (const peer of cameraPeers.values()) {
+    const video = peer.videoEl;
+    const canvas = peer.canvasAi;
+    if (!video || !canvas || video.readyState < 2 || video.videoWidth === 0) continue;
+
+    // Match canvas dimensions to video display dimensions
+    if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
+      canvas.width = video.clientWidth;
+      canvas.height = video.clientHeight;
+    }
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    let detections = [];
+    if (aiDetectorState.model) {
+      try {
+        const raw = await aiDetectorState.model.detect(video);
+        detections = filterDetections(raw, video, canvas);
+      } catch (err) {
+        // Fallback
+      }
+    }
+
+    renderDetectionReticles(ctx, canvas, detections, peer);
+  }
+}
+
+const VEHICLE_CLASSES = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'train', 'airplane', 'boat'];
+const ANIMAL_CLASSES = ['dog', 'cat', 'bird', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'];
+
+function filterDetections(raw, video, canvas) {
+  const scaleX = canvas.width / video.videoWidth;
+  const scaleY = canvas.height / video.videoHeight;
+
+  return raw
+    .filter(item => {
+      if (item.score < 0.48) return false;
+      if (aiDetectorState.filter === 'person') return item.class === 'person';
+      if (aiDetectorState.filter === 'vehicle') return VEHICLE_CLASSES.includes(item.class);
+      if (aiDetectorState.filter === 'animal') return ANIMAL_CLASSES.includes(item.class);
+      return true;
+    })
+    .map(item => ({
+      class: item.class,
+      score: item.score,
+      x: item.bbox[0] * scaleX,
+      y: item.bbox[1] * scaleY,
+      width: item.bbox[2] * scaleX,
+      height: item.bbox[3] * scaleY,
+    }));
+}
+
+function renderDetectionReticles(ctx, canvas, detections, peer) {
+  if (!detections || detections.length === 0) {
+    if (peer.entityPill) peer.entityPill.style.display = 'none';
+    return;
+  }
+
+  // Update tile entity pill
+  if (peer.entityPill) {
+    const counts = {};
+    detections.forEach(d => {
+      counts[d.class] = (counts[d.class] || 0) + 1;
+    });
+    const summary = Object.entries(counts).map(([k, v]) => `${v} ${k.toUpperCase()}`).join(', ');
+    const textEl = peer.entityPill.querySelector('.ai-pill-text');
+    if (textEl) textEl.textContent = `AI: ${summary}`;
+    peer.entityPill.style.display = 'inline-flex';
+  }
+
+  const now = Date.now();
+  let hasHuman = false;
+
+  detections.forEach(d => {
+    const isPerson = d.class === 'person';
+    if (isPerson) hasHuman = true;
+
+    const strokeColor = isPerson ? '#10b981' : (VEHICLE_CLASSES.includes(d.class) ? '#06b6d4' : (ANIMAL_CLASSES.includes(d.class) ? '#c084fc' : '#f59e0b'));
+
+    // Draw Cybernetic Reticle Brackets
+    const x = d.x;
+    const y = d.y;
+    const w = d.width;
+    const h = d.height;
+    const bracketLen = Math.min(22, w * 0.25, h * 0.25);
+
+    ctx.save();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = strokeColor;
+    ctx.shadowBlur = 8;
+
+    // Subtle shaded fill
+    ctx.fillStyle = isPerson ? 'rgba(16, 185, 129, 0.08)' : 'rgba(6, 182, 212, 0.06)';
+    ctx.fillRect(x, y, w, h);
+
+    // Corner brackets
+    ctx.beginPath();
+    // Top-left
+    ctx.moveTo(x, y + bracketLen);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + bracketLen, y);
+    // Top-right
+    ctx.moveTo(x + w - bracketLen, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + bracketLen);
+    // Bottom-right
+    ctx.moveTo(x + w, y + h - bracketLen);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x + w - bracketLen, y + h);
+    // Bottom-left
+    ctx.moveTo(x + bracketLen, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x, y + h - bracketLen);
+    ctx.stroke();
+
+    // Center Crosshair
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = strokeColor;
+    ctx.fill();
+
+    // Tag Banner
+    const label = `${d.class.toUpperCase()} ${Math.round(d.score * 100)}%`;
+    ctx.font = 'bold 11px monospace';
+    const textWidth = ctx.measureText(label).width;
+
+    ctx.fillStyle = 'rgba(9, 9, 11, 0.9)';
+    ctx.fillRect(x, Math.max(0, y - 18), textWidth + 12, 18);
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, Math.max(0, y - 18), textWidth + 12, 18);
+
+    ctx.fillStyle = strokeColor;
+    ctx.fillText(label, x + 6, Math.max(12, y - 5));
+
+    ctx.restore();
+  });
+
+  // Chime and event log rate-limited to once every 7 seconds
+  if (hasHuman && aiDetectorState.audioChime && (now - aiDetectorState.lastChimeTime > 7000)) {
+    aiDetectorState.lastChimeTime = now;
+    if (window.sentinelAudio) window.sentinelAudio.play('connect');
+    logEvent('AI', `ALERT: Human/Person entity identified on ${peer.deviceName} [${peer.deviceId}]`);
+  }
 }
 
 // Add camera of current device directly to host matrix

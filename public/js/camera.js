@@ -629,22 +629,42 @@ function connectWebSocket() {
         }
         break;
 
-      case 'answer':
-        if (pc) {
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          console.log('[Camera] WebRTC Handshake Complete');
+      case 'host-joined':
+        console.log('[Camera] A new host joined the matrix:', msg.hostViewerId);
+        if (localStream) {
+          createPeerConnectionForHost(msg.hostViewerId);
         }
         break;
 
-      case 'ice-candidate':
-        if (pc && msg.candidate) {
+      case 'host-left':
+        if (msg.hostViewerId && hostPeerConnections.has(msg.hostViewerId)) {
+          try { hostPeerConnections.get(msg.hostViewerId).close(); } catch (e) {}
+          hostPeerConnections.delete(msg.hostViewerId);
+        }
+        break;
+
+      case 'answer': {
+        const targetHostId = msg.hostViewerId || 'DEFAULT_HOST';
+        const targetPc = hostPeerConnections.get(targetHostId) || pc;
+        if (targetPc) {
+          await targetPc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          console.log('[Camera] WebRTC Handshake Complete for host:', targetHostId);
+        }
+        break;
+      }
+
+      case 'ice-candidate': {
+        const targetHostId = msg.hostViewerId || 'DEFAULT_HOST';
+        const targetPc = hostPeerConnections.get(targetHostId) || pc;
+        if (targetPc && msg.candidate) {
           try {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            await targetPc.addIceCandidate(new RTCIceCandidate(msg.candidate));
           } catch (e) {
             console.error('Error adding ICE candidate:', e);
           }
         }
         break;
+      }
 
       case 'sleep-timer-updated':
         if (msg.target === 'all' || msg.deviceId === deviceId) {
@@ -853,53 +873,71 @@ function toggleDigitalZoom() {
   }
 }
 
-// WebRTC Offer Generation
-async function startPeerConnection() {
-  if (pc) {
-    pc.close();
+// Multi-Host Peer Connection Map: hostViewerId -> RTCPeerConnection
+const hostPeerConnections = new Map();
+
+async function createPeerConnectionForHost(hostViewerId) {
+  if (!hostViewerId) hostViewerId = 'DEFAULT_HOST';
+  if (hostPeerConnections.has(hostViewerId)) {
+    try { hostPeerConnections.get(hostViewerId).close(); } catch (e) {}
+    hostPeerConnections.delete(hostViewerId);
   }
 
-  pc = new RTCPeerConnection(window.RTC_CONFIG);
+  const newPc = new RTCPeerConnection(window.RTC_CONFIG);
+  hostPeerConnections.set(hostViewerId, newPc);
+  pc = newPc; // Keep backward compatible reference
 
   // Add camera tracks to peer connection
-  localStream.getTracks().forEach((track) => {
-    pc.addTrack(track, localStream);
-  });
+  if (localStream) {
+    localStream.getTracks().forEach((track) => {
+      newPc.addTrack(track, localStream);
+    });
+  }
 
-  pc.onicecandidate = (event) => {
+  newPc.onicecandidate = (event) => {
     if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'ice-candidate',
         sessionId,
         deviceId,
+        hostViewerId,
         candidate: event.candidate,
       }));
     }
   };
 
-  pc.oniceconnectionstatechange = () => {
-    console.log('[Camera] ICE Connection State:', pc.iceConnectionState);
-    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+  newPc.oniceconnectionstatechange = () => {
+    console.log(`[Camera] ICE Connection State for ${hostViewerId}:`, newPc.iceConnectionState);
+    if (newPc.iceConnectionState === 'connected' || newPc.iceConnectionState === 'completed') {
       updateStatus('live', 'LIVE STREAM ENCRYPTED');
-    } else if (pc.iceConnectionState === 'disconnected') {
-      updateStatus('ended', 'HOST DISCONNECTED');
+    } else if (newPc.iceConnectionState === 'disconnected') {
+      if (hostPeerConnections.size <= 1) {
+        updateStatus('ended', 'HOST DISCONNECTED');
+      }
     }
   };
 
-  const offer = await pc.createOffer({
+  const offer = await newPc.createOffer({
     offerToReceiveAudio: false,
     offerToReceiveVideo: false,
   });
-  await pc.setLocalDescription(offer);
+  await newPc.setLocalDescription(offer);
 
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'offer',
       sessionId,
       deviceId,
-      sdp: pc.localDescription,
+      hostViewerId,
+      sdp: newPc.localDescription,
     }));
   }
+  return newPc;
+}
+
+// WebRTC Offer Generation (called when camera starts streaming)
+async function startPeerConnection() {
+  await createPeerConnectionForHost('DEFAULT_HOST');
 }
 
 // Switch between Front and Rear Camera
@@ -928,17 +966,19 @@ async function toggleCameraFacing() {
 
     cameraPreviewVideo.srcObject = localStream;
 
-    // Replace video track in RTCPeerConnection
+    // Replace video track across all active host RTCPeerConnections
     const newVideoTrack = localStream.getVideoTracks()[0];
     torchTrack = newVideoTrack;
 
-    if (pc) {
-      const senders = pc.getSenders();
-      const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-      if (videoSender) {
-        await videoSender.replaceTrack(newVideoTrack);
-      }
-    }
+    hostPeerConnections.forEach(async (conn) => {
+      try {
+        const senders = conn.getSenders();
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+        if (videoSender) {
+          await videoSender.replaceTrack(newVideoTrack);
+        }
+      } catch (e) {}
+    });
 
     // Update mirror class for front selfie camera
     if (currentFacingMode === 'user') {

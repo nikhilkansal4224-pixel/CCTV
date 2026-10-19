@@ -120,11 +120,23 @@ async function authenticate(username, password) {
   if (!user) return null;
 
   if (verifyPassword(password, user.hash, user.salt)) {
+    const rawId = user.id || 'admin';
+    const fallbackUserId = 'USR-' + rawId.replace('user_', '').substring(0, 8).toUpperCase();
+    const formattedUserId = user.userId || fallbackUserId;
+
+    // Update lastLoginAt and ensure userId is stored in MongoDB
+    db.updateUser(user.username, {
+      userId: formattedUserId,
+      lastLoginAt: new Date().toISOString(),
+    }).catch(() => {});
+
     return {
       id: user.id,
+      userId: formattedUserId,
       username: user.username,
       role: user.role,
       displayName: user.displayName || user.username,
+      activeSessionId: user.activeSessionId || null,
     };
   }
   return null;
@@ -146,13 +158,16 @@ async function register(username, password, role = 'Security Operator', displayN
   }
 
   const { hash, salt } = hashPassword(password);
+  const hexCode = crypto.randomBytes(4).toString('hex').toUpperCase();
   const newUser = {
-    id: `user_${crypto.randomBytes(6).toString('hex')}`,
+    id: `user_${hexCode.toLowerCase()}`,
+    userId: `USR-${hexCode}`,
     username: username.trim(),
     hash,
     salt,
     role: role || 'Security Operator',
     displayName: displayName.trim() || username.trim(),
+    activeSessionId: null,
     createdAt: new Date().toISOString(),
   };
 
@@ -160,9 +175,11 @@ async function register(username, password, role = 'Security Operator', displayN
 
   return {
     id: newUser.id,
+    userId: newUser.userId,
     username: newUser.username,
     role: newUser.role,
     displayName: newUser.displayName,
+    activeSessionId: null,
   };
 }
 
@@ -182,11 +199,17 @@ function base64UrlDecode(str) {
 }
 
 function generateToken(user, expiresInMs = 7 * 24 * 60 * 60 * 1000) { // 7 days
+  const rawId = user.id || 'admin';
+  const fallbackUserId = 'USR-' + rawId.replace('user_', '').substring(0, 8).toUpperCase();
+  const formattedUserId = user.userId || fallbackUserId;
+
   const payload = {
     sub: user.id,
+    userId: formattedUserId,
     username: user.username,
     role: user.role,
     displayName: user.displayName,
+    activeSessionId: user.activeSessionId || null,
     exp: Date.now() + expiresInMs,
   };
 

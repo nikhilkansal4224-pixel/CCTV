@@ -105,24 +105,55 @@ async function getOrGenerateCert() {
 }
 
 // In-Memory Session Storage
-// sessionId -> { id, createdAt, expiresAt, status: 'waiting'|'active'|'ended', hostWs, sleepTimer, cameras: Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, sleepTimer }> }
+// sessionId -> { id, userId, operator, createdAt, expiresAt, status: 'waiting'|'active'|'ended', hostWs, hosts: Map<hostViewerId, { ws, hostViewerId, userId }>, sleepTimer, cameras: Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, sleepTimer }> }
 const sessions = new Map();
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours max session lifetime (no forced 10-minute cutoff)
 
-function createSession() {
+function createSession(userId = null, operatorName = null) {
   const id = crypto.randomBytes(6).toString('hex'); // 12-char hex ID
   const now = Date.now();
   const session = {
     id,
+    userId: userId || null,
+    operator: operatorName || null,
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
     status: 'waiting',
     hostWs: null,
+    hosts: new Map(), // hostViewerId -> { ws, hostViewerId, userId, connectedAt }
     sleepTimer: { active: false, expiresAt: null, durationMinutes: null },
     cameras: new Map(), // Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, facingMode, resolution, sleepTimer }>
   };
   sessions.set(id, session);
   return session;
+}
+
+// Broadcast message to all connected host monitors for this session
+function broadcastToHosts(session, messageObj) {
+  if (!session) return;
+  const json = typeof messageObj === 'string' ? messageObj : JSON.stringify(messageObj);
+  if (session.hosts) {
+    for (const host of session.hosts.values()) {
+      if (host.ws && host.ws.readyState === 1) {
+        try { host.ws.send(json); } catch (e) {}
+      }
+    }
+  }
+  if (session.hostWs && session.hostWs.readyState === 1) {
+    // Only send if not already in session.hosts
+    let alreadySent = false;
+    if (session.hosts) {
+      for (const host of session.hosts.values()) {
+        if (host.ws === session.hostWs) {
+          alreadySent = true;
+          break;
+        }
+      }
+    }
+    if (!alreadySent) {
+      try { session.hostWs.send(json); } catch (e) {}
+    }
+  }
 }
 
 function cleanupSessions() {
@@ -147,15 +178,13 @@ function cleanupSessions() {
           if (session.cameras.size === 0) {
             session.status = 'waiting';
           }
-          if (session.hostWs && session.hostWs.readyState === 1) {
-            session.hostWs.send(JSON.stringify({
-              type: 'camera-disconnected',
-              sessionId: id,
-              deviceId: devId,
-              reason: 'Sleep timer reached',
-              totalCameras: session.cameras.size,
-            }));
-          }
+          broadcastToHosts(session, {
+            type: 'camera-disconnected',
+            sessionId: id,
+            deviceId: devId,
+            reason: 'Sleep timer reached',
+            totalCameras: session.cameras.size,
+          });
         }
       }
     }
@@ -170,9 +199,7 @@ function cleanupSessions() {
         reason: 'Master sleep timer reached',
       });
 
-      if (session.hostWs && session.hostWs.readyState === 1) {
-        session.hostWs.send(allSleepNotice);
-      }
+      broadcastToHosts(session, allSleepNotice);
       if (session.cameras) {
         for (const [devId, cam] of session.cameras.entries()) {
           if (cam.ws && cam.ws.readyState === 1) {
@@ -188,9 +215,16 @@ function cleanupSessions() {
     // 3. Stale session cleanup (only if ended or past 24-hour lifetime)
     if (session.status === 'ended' || (session.expiresAt && session.expiresAt <= now)) {
       const expiredMsg = JSON.stringify({ type: 'session-expired', sessionId: id });
+      broadcastToHosts(session, expiredMsg);
+      if (session.hosts) {
+        for (const host of session.hosts.values()) {
+          if (host.ws && host.ws.readyState === 1) {
+            try { host.ws.close(); } catch (e) {}
+          }
+        }
+      }
       if (session.hostWs && session.hostWs.readyState === 1) {
-        session.hostWs.send(expiredMsg);
-        session.hostWs.close();
+        try { session.hostWs.close(); } catch (e) {}
       }
       if (session.cameras) {
         for (const cam of session.cameras.values()) {
@@ -303,7 +337,10 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Database & Persistence Health Status
-app.get('/api/db/status', (req, res) => {
+app.get('/api/db/status', async (req, res) => {
+  try {
+    await require('./db').connectDB();
+  } catch (e) {}
   res.json(require('./db').getStatus());
 });
 
@@ -349,16 +386,40 @@ app.get('/api/network-info', (req, res) => {
   });
 });
 
-// Create new temporary session (requires authenticated operator)
-app.post('/api/sessions/create', auth.requireAuth, (req, res) => {
-  const session = createSession();
-  session.operator = req.user.username;
+// Create or retrieve active session for authenticated operator (multi-device sync)
+app.post('/api/sessions/create', auth.requireAuth, async (req, res) => {
+  const user = req.user;
+  const forceNew = req.query.forceNew === 'true';
+
+  let session = null;
+  // If not forcing a new session, check for an existing active session for this user
+  if (!forceNew && user && (user.sub || user.id)) {
+    const userIdentifier = user.sub || user.id;
+    for (const s of sessions.values()) {
+      if (s.userId === userIdentifier && s.status !== 'ended' && s.expiresAt > Date.now()) {
+        session = s;
+        break;
+      }
+    }
+  }
+
+  if (!session) {
+    const userIdentifier = user ? (user.sub || user.id) : null;
+    session = createSession(userIdentifier, user ? user.username : 'Operator');
+    if (user && user.username) {
+      const dbMod = require('./db');
+      dbMod.updateUser(user.username, { activeSessionId: session.id }).catch(() => {});
+    }
+  }
+
   const baseUrl = buildBaseUrl(req, req.query.host, req.query.protocol);
   const cameraUrl = `${baseUrl}/camera.html?session=${session.id}`;
   const preferProtocol = req.query.protocol || (req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http');
+  const userIdVal = user.userId || ('USR-' + (user.sub || user.id || 'ADMIN').replace('user_', '').substring(0, 8).toUpperCase());
 
   res.json({
     sessionId: session.id,
+    userId: userIdVal,
     createdAt: session.createdAt,
     expiresAt: session.expiresAt,
     ttlSeconds: Math.floor(SESSION_TTL_MS / 1000),
@@ -692,6 +753,7 @@ async function start() {
     let boundSessionId = null;
     let boundRole = null;
     let boundDeviceId = null;
+    let boundHostViewerId = null;
 
     ws.on('message', (message) => {
       let data;
@@ -717,7 +779,17 @@ async function start() {
         boundRole = role;
 
         if (role === 'host') {
-          session.hostWs = ws;
+          const hostViewerId = data.hostViewerId || `HOST-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+          boundHostViewerId = hostViewerId;
+          if (!session.hosts) session.hosts = new Map();
+          session.hosts.set(hostViewerId, {
+            ws,
+            hostViewerId,
+            userId: data.userId || null,
+            connectedAt: Date.now(),
+          });
+          session.hostWs = ws; // legacy reference
+
           const cameraList = Array.from(session.cameras.values()).map(c => ({
             deviceId: c.deviceId,
             deviceName: c.deviceName,
@@ -727,6 +799,7 @@ async function start() {
           ws.send(JSON.stringify({
             type: 'joined',
             role: 'host',
+            hostViewerId,
             sessionId,
             status: session.status,
             totalCameras: session.cameras.size,
@@ -734,6 +807,18 @@ async function start() {
             hasCamera: session.cameras.size > 0,
             sleepTimer: session.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
           }));
+
+          // Notify all active cameras in the session that a new host monitor joined so they can initiate a stream offer
+          for (const cam of session.cameras.values()) {
+            if (cam.ws && cam.ws.readyState === 1) {
+              cam.ws.send(JSON.stringify({
+                type: 'host-joined',
+                sessionId,
+                hostViewerId,
+                totalHosts: session.hosts.size,
+              }));
+            }
+          }
         } else if (role === 'camera') {
           // Unique device ID for each camera
           const deviceId = data.deviceId || `CAM-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
@@ -770,18 +855,16 @@ async function start() {
             sleepTimer: camSleepTimer,
           }));
 
-          // Notify the host monitor that a camera scanned and joined
-          if (session.hostWs && session.hostWs.readyState === 1) {
-            session.hostWs.send(JSON.stringify({
-              type: 'camera-joined',
-              sessionId,
-              deviceId,
-              deviceName,
-              totalCameras: session.cameras.size,
-              timestamp: Date.now(),
-              sleepTimer: camSleepTimer,
-            }));
-          }
+          // Notify all host monitors that a camera scanned and joined
+          broadcastToHosts(session, {
+            type: 'camera-joined',
+            sessionId,
+            deviceId,
+            deviceName,
+            totalCameras: session.cameras.size,
+            timestamp: Date.now(),
+            sleepTimer: camSleepTimer,
+          });
         }
         return;
       }
@@ -802,30 +885,36 @@ async function start() {
           cam.resolution = data.resolution;
         }
 
-        if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-          currentSession.hostWs.send(JSON.stringify({
-            type: 'camera-ready',
-            sessionId: currentSession.id,
-            deviceId: deviceId,
-            deviceName: currentSession.cameras.get(deviceId)?.deviceName || 'Camera',
-            facingMode: data.facingMode,
-            resolution: data.resolution,
-            hasAudio: data.hasAudio,
-          }));
-        }
+        broadcastToHosts(currentSession, {
+          type: 'camera-ready',
+          sessionId: currentSession.id,
+          deviceId: deviceId,
+          deviceName: currentSession.cameras.get(deviceId)?.deviceName || 'Camera',
+          facingMode: data.facingMode,
+          resolution: data.resolution,
+          hasAudio: data.hasAudio,
+        });
         return;
       }
 
-      // WebRTC Offer from Camera to Host
+      // WebRTC Offer from Camera to Host (directed or broadcast)
       if (type === 'offer') {
         const deviceId = boundDeviceId || data.deviceId || (currentSession.cameras.keys().next().value);
-        if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-          currentSession.hostWs.send(JSON.stringify({
-            type: 'offer',
-            sessionId: currentSession.id,
-            deviceId,
-            sdp: data.sdp,
-          }));
+        const offerPayload = {
+          type: 'offer',
+          sessionId: currentSession.id,
+          deviceId,
+          hostViewerId: data.hostViewerId || null,
+          sdp: data.sdp,
+        };
+
+        if (data.hostViewerId && currentSession.hosts && currentSession.hosts.has(data.hostViewerId)) {
+          const targetHost = currentSession.hosts.get(data.hostViewerId);
+          if (targetHost.ws && targetHost.ws.readyState === 1) {
+            targetHost.ws.send(JSON.stringify(offerPayload));
+          }
+        } else {
+          broadcastToHosts(currentSession, offerPayload);
         }
         return;
       }
@@ -844,6 +933,7 @@ async function start() {
             type: 'answer',
             sessionId: currentSession.id,
             deviceId: targetCam.deviceId,
+            hostViewerId: boundHostViewerId || data.hostViewerId || null,
             sdp: data.sdp,
           }));
         }
@@ -855,13 +945,20 @@ async function start() {
         if (boundRole === 'camera') {
           // Camera sending candidate to Host
           const deviceId = boundDeviceId || data.deviceId;
-          if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-            currentSession.hostWs.send(JSON.stringify({
-              type: 'ice-candidate',
-              sessionId: currentSession.id,
-              deviceId,
-              candidate: data.candidate,
-            }));
+          const candPayload = {
+            type: 'ice-candidate',
+            sessionId: currentSession.id,
+            deviceId,
+            hostViewerId: data.hostViewerId || null,
+            candidate: data.candidate,
+          };
+          if (data.hostViewerId && currentSession.hosts && currentSession.hosts.has(data.hostViewerId)) {
+            const targetHost = currentSession.hosts.get(data.hostViewerId);
+            if (targetHost.ws && targetHost.ws.readyState === 1) {
+              targetHost.ws.send(JSON.stringify(candPayload));
+            }
+          } else {
+            broadcastToHosts(currentSession, candPayload);
           }
         } else {
           // Host sending candidate to specific Camera
@@ -877,6 +974,7 @@ async function start() {
               type: 'ice-candidate',
               sessionId: currentSession.id,
               deviceId: targetCam.deviceId,
+              hostViewerId: boundHostViewerId || data.hostViewerId || null,
               candidate: data.candidate,
             }));
           }
@@ -887,14 +985,12 @@ async function start() {
       // Stream Stats telemetry
       if (type === 'telemetry') {
         const deviceId = boundDeviceId || data.deviceId;
-        if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-          currentSession.hostWs.send(JSON.stringify({
-            type: 'telemetry',
-            sessionId: currentSession.id,
-            deviceId,
-            stats: data.stats,
-          }));
-        }
+        broadcastToHosts(currentSession, {
+          type: 'telemetry',
+          sessionId: currentSession.id,
+          deviceId,
+          stats: data.stats,
+        });
         return;
       }
 
@@ -916,14 +1012,12 @@ async function start() {
           if (currentSession.cameras.size === 0) {
             currentSession.status = 'waiting';
           }
-          if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-            currentSession.hostWs.send(JSON.stringify({
-              type: 'camera-disconnected',
-              sessionId: currentSession.id,
-              deviceId,
-              totalCameras: currentSession.cameras.size,
-            }));
-          }
+          broadcastToHosts(currentSession, {
+            type: 'camera-disconnected',
+            sessionId: currentSession.id,
+            deviceId,
+            totalCameras: currentSession.cameras.size,
+          });
         }
         return;
       }
@@ -936,15 +1030,13 @@ async function start() {
           if (currentSession.cameras.size === 0) {
             currentSession.status = 'waiting';
           }
-          if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-            currentSession.hostWs.send(JSON.stringify({
-              type: 'camera-disconnected',
-              sessionId: currentSession.id,
-              deviceId,
-              totalCameras: currentSession.cameras.size,
-              reason: data.reason || 'Camera device disconnected',
-            }));
-          }
+          broadcastToHosts(currentSession, {
+            type: 'camera-disconnected',
+            sessionId: currentSession.id,
+            deviceId,
+            totalCameras: currentSession.cameras.size,
+            reason: data.reason || 'Camera device disconnected',
+          });
         }
         return;
       }
@@ -966,20 +1058,19 @@ async function start() {
               cam.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
             }
           }
-          const updateNotice = JSON.stringify({
+          const updateNotice = {
             type: 'sleep-timer-updated',
             sessionId: currentSession.id,
             target: 'all',
             sleepTimer: currentSession.sleepTimer,
             remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
-          });
-          if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-            currentSession.hostWs.send(updateNotice);
-          }
+          };
+          broadcastToHosts(currentSession, updateNotice);
           if (currentSession.cameras) {
+            const noticeStr = JSON.stringify(updateNotice);
             for (const cam of currentSession.cameras.values()) {
               if (cam.ws && cam.ws.readyState === 1) {
-                cam.ws.send(updateNotice);
+                cam.ws.send(noticeStr);
               }
             }
           }
@@ -988,19 +1079,17 @@ async function start() {
           if (currentSession.cameras && currentSession.cameras.has(devId)) {
             const cam = currentSession.cameras.get(devId);
             cam.sleepTimer = { active, expiresAt, durationMinutes: numMinutes };
-            const updateNotice = JSON.stringify({
+            const updateNotice = {
               type: 'sleep-timer-updated',
               sessionId: currentSession.id,
               target: devId,
               deviceId: devId,
               sleepTimer: cam.sleepTimer,
               remainingSeconds: active ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
-            });
-            if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-              currentSession.hostWs.send(updateNotice);
-            }
+            };
+            broadcastToHosts(currentSession, updateNotice);
             if (cam.ws && cam.ws.readyState === 1) {
-              cam.ws.send(updateNotice);
+              cam.ws.send(JSON.stringify(updateNotice));
             }
           }
         }
@@ -1015,9 +1104,7 @@ async function start() {
           sessionId: currentSession.id,
           reason: data.reason || 'Session ended by host operator',
         });
-        if (currentSession.hostWs && currentSession.hostWs.readyState === 1) {
-          currentSession.hostWs.send(endNotice);
-        }
+        broadcastToHosts(currentSession, endNotice);
         for (const cam of currentSession.cameras.values()) {
           if (cam.ws && cam.ws.readyState === 1) {
             cam.ws.send(endNotice);
@@ -1043,23 +1130,42 @@ async function start() {
             if (session.cameras.size === 0) {
               session.status = 'waiting';
             }
-            if (session.hostWs && session.hostWs.readyState === 1) {
-              session.hostWs.send(JSON.stringify({
-                type: 'camera-disconnected',
-                sessionId: boundSessionId,
-                deviceId: boundDeviceId,
-                totalCameras: session.cameras.size,
-              }));
-            }
-          } else if (boundRole === 'host' && session.hostWs === ws) {
-            session.hostWs = null;
-            const hostDisconNotice = JSON.stringify({
-              type: 'host-disconnected',
+            broadcastToHosts(session, {
+              type: 'camera-disconnected',
               sessionId: boundSessionId,
+              deviceId: boundDeviceId,
+              totalCameras: session.cameras.size,
             });
-            for (const cam of session.cameras.values()) {
-              if (cam.ws && cam.ws.readyState === 1) {
-                cam.ws.send(hostDisconNotice);
+          } else if (boundRole === 'host') {
+            if (boundHostViewerId && session.hosts) {
+              session.hosts.delete(boundHostViewerId);
+            }
+            if (session.hostWs === ws) {
+              session.hostWs = session.hosts && session.hosts.size > 0 ? session.hosts.values().next().value.ws : null;
+            }
+            // Only disconnect camera if NO host monitors remain open
+            if ((!session.hosts || session.hosts.size === 0) && !session.hostWs) {
+              const hostDisconNotice = JSON.stringify({
+                type: 'host-disconnected',
+                sessionId: boundSessionId,
+              });
+              for (const cam of session.cameras.values()) {
+                if (cam.ws && cam.ws.readyState === 1) {
+                  cam.ws.send(hostDisconNotice);
+                }
+              }
+            } else if (boundHostViewerId) {
+              // Notify cameras that a specific host viewer closed
+              const hostLeaveNotice = JSON.stringify({
+                type: 'host-left',
+                sessionId: boundSessionId,
+                hostViewerId: boundHostViewerId,
+                remainingHosts: session.hosts ? session.hosts.size : 0,
+              });
+              for (const cam of session.cameras.values()) {
+                if (cam.ws && cam.ws.readyState === 1) {
+                  cam.ws.send(hostLeaveNotice);
+                }
               }
             }
           }

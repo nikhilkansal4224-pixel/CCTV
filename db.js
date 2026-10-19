@@ -173,6 +173,55 @@ function updateLocalFile(newUser) {
   } catch (e) {}
 }
 
+async function findUserById(idOrUserId) {
+  if (!idOrUserId) return null;
+  if (isConnected && usersCollection) {
+    try {
+      const user = await usersCollection.findOne({
+        $or: [{ id: idOrUserId }, { userId: idOrUserId }],
+      });
+      return user;
+    } catch (e) {
+      console.warn('[Database] Mongo findUserById error:', e.message);
+    }
+  }
+
+  const users = await getAllUsers();
+  return users.find(u => u.id === idOrUserId || u.userId === idOrUserId) || null;
+}
+
+async function updateUser(usernameOrId, updates) {
+  if (!usernameOrId || !updates) return false;
+  if (isConnected && usersCollection) {
+    try {
+      await usersCollection.updateOne(
+        { $or: [{ username: usernameOrId }, { id: usernameOrId }, { userId: usernameOrId }] },
+        { $set: updates }
+      );
+    } catch (e) {
+      console.warn('[Database] Mongo updateUser error:', e.message);
+    }
+  }
+
+  // Update in local cache
+  const mIdx = memoryUsers.findIndex(u => u.username === usernameOrId || u.id === usernameOrId || u.userId === usernameOrId);
+  if (mIdx >= 0) {
+    memoryUsers[mIdx] = { ...memoryUsers[mIdx], ...updates };
+  }
+
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+      const idx = users.findIndex(u => u.username === usernameOrId || u.id === usernameOrId || u.userId === usernameOrId);
+      if (idx >= 0) {
+        users[idx] = { ...users[idx], ...updates };
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+      }
+    }
+  } catch (e) {}
+  return true;
+}
+
 function getStatus() {
   return {
     success: true,
@@ -186,6 +235,8 @@ function getStatus() {
 module.exports = {
   connectDB,
   findUserByUsername,
+  findUserById,
+  updateUser,
   insertUser,
   getAllUsers,
   getStatus,
