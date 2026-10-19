@@ -316,6 +316,37 @@ app.post('/api/sessions/:id/end', (req, res) => {
   res.json({ success: true, message: 'Session terminated' });
 });
 
+// Extend active session duration (+10 minutes)
+app.post('/api/sessions/:id/extend', auth.optionalAuth, (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session || session.status === 'ended') {
+    return res.status(404).json({ error: 'Session not found or already ended' });
+  }
+
+  const additionalMs = 10 * 60 * 1000;
+  session.expiresAt = Math.max(Date.now(), session.expiresAt) + additionalMs;
+
+  const extendNotice = JSON.stringify({
+    type: 'session-extended',
+    sessionId: session.id,
+    expiresAt: session.expiresAt,
+    remainingSeconds: Math.floor((session.expiresAt - Date.now()) / 1000),
+  });
+
+  if (session.hostWs && session.hostWs.readyState === 1) {
+    session.hostWs.send(extendNotice);
+  }
+  if (session.cameraWs && session.cameraWs.readyState === 1) {
+    session.cameraWs.send(extendNotice);
+  }
+
+  res.json({
+    success: true,
+    expiresAt: session.expiresAt,
+    remainingSeconds: Math.floor((session.expiresAt - Date.now()) / 1000),
+  });
+});
+
 async function start() {
   const sslCredentials = await getOrGenerateCert();
 

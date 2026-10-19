@@ -69,19 +69,27 @@
         <!-- Camera Device Options -->
         <div class="device-options-group">
           <div>
-            <label class="input-label" for="facingSelect">Camera Lens</label>
+            <label class="input-label" for="facingSelect">Camera Lens Source</label>
             <select id="facingSelect" class="custom-select" style="margin-top: 0.35rem;">
-              <option value="environment" selected>Back Camera (Recommended)</option>
-              <option value="user">Front Camera (Selfie)</option>
+              <option value="environment" selected>Back Camera (Main Sensor)</option>
+              <option value="user">Front Camera (Selfie / Ultra-wide)</option>
+              <option value="simulator">Virtual CCTV Test Pattern (No Hardware Required)</option>
             </select>
           </div>
 
           <div>
             <label class="input-label" for="resolutionSelect">Stream Resolution</label>
             <select id="resolutionSelect" class="custom-select" style="margin-top: 0.35rem;">
-              <option value="720" selected>720p HD (Smooth & Fast)</option>
+              <option value="720" selected>720p HD (Smooth & Efficient)</option>
               <option value="1080">1080p Full HD (High Detail)</option>
             </select>
+          </div>
+
+          <div style="margin-top: 0.25rem;">
+            <label class="checkbox-label" style="font-size: 0.8rem;">
+              <input type="checkbox" id="micAudioToggle">
+              <span>Transmit Microphone Audio to Host</span>
+            </label>
           </div>
         </div>
 
@@ -107,6 +115,18 @@
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
+      </button>
+
+      <!-- Toggle Microphone Audio Button -->
+      <button class="cam-round-btn" id="btnToggleMic" style="display: none;" title="Mute/Unmute Mic">
+        <svg id="micIcon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+      </button>
+
+      <!-- Digital Zoom Button -->
+      <button class="cam-round-btn" id="btnZoom" title="Toggle Digital Zoom">
+        <span style="font-size: 0.8rem; font-weight: 700; font-family: var(--font-mono);" id="zoomLabel">1x</span>
       </button>
 
       <!-- Torch Button (if supported) -->

@@ -82,7 +82,7 @@
       <!-- Video Display Stage -->
       <div class="video-stage" id="videoStage">
         <!-- Live Remote Stream -->
-        <video id="remoteVideo" class="remote-video" autoplay playsinline muted></video>
+        <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
 
         <!-- Viewport HUD & Reticle -->
         <div class="viewport-reticle" id="viewportReticle">
@@ -139,22 +139,44 @@
       <!-- Viewport Action Toolbar -->
       <div class="viewport-footer">
         <div class="control-btn-group">
+          <!-- Live Video Recording Button -->
+          <button class="btn-icon" id="btnRecord" title="Record Live Video Clip">
+            <svg id="recordIcon" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <circle cx="12" cy="12" r="7" fill="#ef4444" stroke="#ef4444" />
+            </svg>
+            <span id="recordTimer" style="display: none; font-size: 0.72rem; font-family: var(--font-mono); font-weight: 700; color: #ef4444; margin-left: 0.35rem;">REC 00:00</span>
+          </button>
+
+          <!-- Audio Listen / Mute Toggle -->
+          <button class="btn-icon" id="btnMuteAudio" title="Mute / Unmute Room Audio">
+            <svg id="audioIcon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            </svg>
+          </button>
+
+          <!-- Crosshairs Reticle -->
           <button class="btn-icon active" id="btnToggleReticle" title="Toggle Crosshair Overlay">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
           </button>
+
+          <!-- Aspect Fit / Fill -->
           <button class="btn-icon" id="btnAspect" title="Toggle Aspect Fit/Fill">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
             </svg>
           </button>
+
+          <!-- Snapshot -->
           <button class="btn-icon" id="btnSnapshot" title="Capture Snapshot">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
           </button>
+
+          <!-- Fullscreen -->
           <button class="btn-icon" id="btnFullscreen" title="Fullscreen">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
@@ -169,6 +191,22 @@
           <span>End Session</span>
         </button>
       </div>
+
+      <!-- Surveillance Security Event Log -->
+      <div style="background: rgba(14, 14, 18, 0.95); border-top: 1px solid var(--border-light); padding: 0.85rem 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em;">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Surveillance Activity Log</span>
+          </div>
+          <button id="btnClearLog" style="background: none; border: none; color: var(--text-tertiary); font-size: 0.7rem; cursor: pointer;">Clear Log</button>
+        </div>
+        <div id="eventLogContainer" style="max-height: 80px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.25rem;">
+          <div><span style="color: var(--text-tertiary);">[SYS]</span> Sentinel Gateway initialized. Zero-trust active.</div>
+        </div>
+      </div>
     </section>
 
     <!-- Right Side: Large QR Code & Session Control Dock -->
@@ -181,11 +219,14 @@
             <h2 class="qr-title">Camera Pairing Key</h2>
             <span class="qr-subtitle">Scan to request camera link</span>
           </div>
-          <div class="expiry-badge" id="expiryBadge">
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span id="countdownDisplay">10:00</span>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <button id="btnExtendSession" class="btn-copy" style="display: none; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #a7f3d0;" title="Add 10 more minutes">+10m</button>
+            <div class="expiry-badge" id="expiryBadge">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span id="countdownDisplay">10:00</span>
+            </div>
           </div>
         </div>
 

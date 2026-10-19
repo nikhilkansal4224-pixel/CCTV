@@ -53,6 +53,31 @@ const userRoleEl = document.getElementById('userRole');
 const userAvatarEl = document.getElementById('userAvatar');
 const btnLogout = document.getElementById('btnLogout');
 
+// Viewport Toolbar & Recording Elements
+const btnRecord = document.getElementById('btnRecord');
+const recordTimer = document.getElementById('recordTimer');
+const recordIcon = document.getElementById('recordIcon');
+const btnMuteAudio = document.getElementById('btnMuteAudio');
+const audioIcon = document.getElementById('audioIcon');
+const btnExtendSession = document.getElementById('btnExtendSession');
+const eventLogContainer = document.getElementById('eventLogContainer');
+const btnClearLog = document.getElementById('btnClearLog');
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordInterval = null;
+let recordSeconds = 0;
+let isAudioMuted = true; // default video muted to avoid local loop feedback
+
+function logEvent(tag, message) {
+  if (!eventLogContainer) return;
+  const time = new Date().toTimeString().split(' ')[0];
+  const row = document.createElement('div');
+  row.innerHTML = `<span style="color: var(--text-tertiary);">[${time}]</span> <strong style="color: #ffffff;">[${tag}]</strong> ${message}`;
+  eventLogContainer.appendChild(row);
+  eventLogContainer.scrollTop = eventLogContainer.scrollHeight;
+}
+
 // Clock watermark
 setInterval(() => {
   if (liveTimestamp) {
@@ -193,10 +218,19 @@ function startCountdown(expiresAt) {
     const secs = String(remaining % 60).padStart(2, '0');
     countdownDisplay.textContent = `${mins}:${secs}`;
 
+    if (btnExtendSession) {
+      if (remaining <= 120 && remaining > 0) {
+        btnExtendSession.style.display = 'inline-block';
+      } else {
+        btnExtendSession.style.display = 'none';
+      }
+    }
+
     if (remaining <= 0) {
       clearInterval(timerInterval);
       countdownDisplay.textContent = 'EXPIRED';
       countdownDisplay.parentElement.classList.add('expired');
+      if (btnExtendSession) btnExtendSession.style.display = 'none';
       handleSessionExpired();
     }
   }
@@ -247,19 +281,22 @@ function connectWebSocket(sessionId) {
 
     switch (msg.type) {
       case 'joined':
-        console.log('[Host] Joined session:', msg.sessionId);
+        logEvent('SYS', `Signaling link established (#${msg.sessionId})`);
         break;
 
       case 'camera-joined':
         updateStatus('waiting', 'DEVICE PAIRED — REQUESTING PERMISSION');
         setStep(2);
         showToast('Smartphone scanned QR code!');
+        logEvent('PEER', 'Remote smartphone paired via QR scan');
+        if (window.sentinelAudio) window.sentinelAudio.play('connect');
         break;
 
       case 'camera-ready':
         updateStatus('waiting', 'PERMISSION GRANTED — STARTING WEBRTC');
         setStep(3);
         showToast('Camera consent granted on remote phone');
+        logEvent('CONSENT', `Camera permission granted (${msg.facingMode || 'Lens'} / ${msg.resolution || '720p'})`);
         break;
 
       case 'offer':
@@ -276,20 +313,34 @@ function connectWebSocket(sessionId) {
         }
         break;
 
+      case 'session-extended':
+        sessionExpiresAt = msg.expiresAt;
+        startCountdown(msg.expiresAt);
+        if (btnExtendSession) btnExtendSession.style.display = 'none';
+        countdownDisplay.parentElement.classList.remove('expired');
+        showToast('Session extended (+10 mins)');
+        logEvent('SYS', 'Session duration extended +10 minutes');
+        break;
+
       case 'telemetry':
-        // Optional camera side telemetry
         break;
 
       case 'camera-disconnected':
         handleCameraDisconnected();
+        logEvent('WARN', 'Remote camera device disconnected');
+        if (window.sentinelAudio) window.sentinelAudio.play('disconnect');
         break;
 
       case 'session-ended':
         handleSessionEnded(msg.reason);
+        logEvent('TERM', msg.reason || 'Session terminated');
+        if (window.sentinelAudio) window.sentinelAudio.play('disconnect');
         break;
 
       case 'session-expired':
         handleSessionExpired();
+        logEvent('TERM', 'Session expired by countdown');
+        if (window.sentinelAudio) window.sentinelAudio.play('disconnect');
         break;
     }
   };
@@ -474,7 +525,39 @@ function setupEventListeners() {
     a.download = `cctv-capture-${Date.now()}.jpg`;
     a.click();
     showToast('Snapshot saved to Downloads');
+    logEvent('SNAP', 'High-res surveillance snapshot captured');
+    if (window.sentinelAudio) window.sentinelAudio.play('snapshot');
   });
+
+  // Video Clip Recording Toggle
+  if (btnRecord) {
+    btnRecord.addEventListener('click', () => {
+      toggleVideoRecording();
+    });
+  }
+
+  // Audio Listen / Mute Toggle
+  if (btnMuteAudio) {
+    btnMuteAudio.addEventListener('click', () => {
+      toggleAudioMute();
+    });
+  }
+
+  // Extend Session Button (+10m)
+  if (btnExtendSession) {
+    btnExtendSession.addEventListener('click', () => {
+      extendCurrentSession();
+    });
+  }
+
+  // Clear Event Log
+  if (btnClearLog) {
+    btnClearLog.addEventListener('click', () => {
+      if (eventLogContainer) {
+        eventLogContainer.innerHTML = '<div><span style="color: var(--text-tertiary);">[SYS]</span> Log cleared.</div>';
+      }
+    });
+  }
 
   // Aspect ratio toggle
   let isCover = false;
@@ -520,6 +603,94 @@ function setupEventListeners() {
         window.location.href = '/login.html';
       }
     });
+  }
+}
+
+function toggleVideoRecording() {
+  if (!remoteStream || !remoteStream.active) {
+    showToast('Cannot record: No active video stream');
+    return;
+  }
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    // Stop recording
+    mediaRecorder.stop();
+    clearInterval(recordInterval);
+    btnRecord.classList.remove('active');
+    btnRecord.style.borderColor = '';
+    recordTimer.style.display = 'none';
+    showToast('Video recording saved to Downloads');
+    logEvent('REC', `Video recording saved (${recordSeconds}s)`);
+    if (window.sentinelAudio) window.sentinelAudio.play('record');
+  } else {
+    // Start recording
+    recordedChunks = [];
+    recordSeconds = 0;
+    try {
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+        ? 'video/webm;codecs=vp8,opus'
+        : 'video/webm';
+      mediaRecorder = new MediaRecorder(remoteStream, { mimeType });
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cctv-clip-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      mediaRecorder.start(1000); // 1s slice
+      btnRecord.classList.add('active');
+      btnRecord.style.borderColor = '#ef4444';
+      recordTimer.style.display = 'inline-block';
+      recordTimer.textContent = 'REC 00:00';
+
+      recordInterval = setInterval(() => {
+        recordSeconds++;
+        const mins = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
+        const secs = String(recordSeconds % 60).padStart(2, '0');
+        recordTimer.textContent = `REC ${mins}:${secs}`;
+      }, 1000);
+
+      showToast('Recording live video clip...');
+      logEvent('REC', 'Recording live surveillance clip started');
+      if (window.sentinelAudio) window.sentinelAudio.play('record');
+    } catch (err) {
+      console.error('MediaRecorder error:', err);
+      showToast('Recording failed: ' + err.message);
+    }
+  }
+}
+
+function toggleAudioMute() {
+  if (!remoteVideo) return;
+  isAudioMuted = !isAudioMuted;
+  remoteVideo.muted = isAudioMuted;
+  btnMuteAudio.classList.toggle('active', !isAudioMuted);
+  showToast(isAudioMuted ? 'Room Audio Muted' : 'Room Audio Live');
+  logEvent('AUDIO', isAudioMuted ? 'Host muted audio listening' : 'Host listening to live room audio');
+}
+
+async function extendCurrentSession() {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(`/api/sessions/${currentSessionId}/extend`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      sessionExpiresAt = data.expiresAt;
+      startCountdown(data.expiresAt);
+      btnExtendSession.style.display = 'none';
+      countdownDisplay.parentElement.classList.remove('expired');
+      showToast('Session extended by +10 minutes');
+      logEvent('AUTH', 'Session duration extended +10 minutes');
+    }
+  } catch (err) {
+    showToast('Failed to extend session');
   }
 }
 
