@@ -9,7 +9,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
-  <!-- AI Entity Detection Neural Network Engines (TensorFlow.js & COCO-SSD) -->
+  <!-- AI Entity Detection Neural Network Engines (Ultralytics YOLOv8 & TensorFlow.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+  <script src="/js/yolo.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
 </head>
@@ -235,6 +237,14 @@
               <div class="ai-menu-header">AI ENTITY VISION</div>
               <button class="ai-menu-item" id="btnAiToggleState" data-mode="toggle">
                 <span>Entity Detection:</span> <strong id="aiStateLabel" style="color: #ef4444;">OFF</strong>
+              </button>
+              <div class="ai-menu-divider"></div>
+              <div class="ai-menu-sublabel">NEURAL ENGINE</div>
+              <button class="ai-menu-item active" data-engine="yolov8" id="btnEngineYolo">
+                <span>Ultralytics YOLOv8</span> <span style="color: #10b981; font-size: 0.68rem; font-weight: 700;">DEFAULT</span>
+              </button>
+              <button class="ai-menu-item" data-engine="coco" id="btnEngineCoco">
+                <span>COCO-SSD MobileNet</span>
               </button>
               <div class="ai-menu-divider"></div>
               <div class="ai-menu-sublabel">FILTER TARGETS</div>

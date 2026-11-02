@@ -32,3 +32,4 @@ data/
 .env*
 venv/
 *.pt
+/yolov8n.onnx

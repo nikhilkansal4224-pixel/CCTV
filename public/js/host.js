@@ -1373,6 +1373,22 @@ function setupEventListeners() {
   }
 
   if (aiDetectMenu) {
+    aiDetectMenu.querySelectorAll('[data-engine]').forEach(engBtn => {
+      engBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        aiDetectMenu.querySelectorAll('[data-engine]').forEach(b => b.classList.remove('active'));
+        engBtn.classList.add('active');
+        aiDetectorState.engine = engBtn.getAttribute('data-engine');
+        showToast(`AI Engine: ${aiDetectorState.engine.toUpperCase()}`);
+        logEvent('AI', `Engine switched to ${aiDetectorState.engine.toUpperCase()}`);
+        aiDetectorState.model = null;
+        aiDetectorState.yoloModel = null;
+        if (aiDetectorState.enabled) {
+          await initAiModel();
+        }
+      });
+    });
+
     aiDetectMenu.querySelectorAll('[data-filter]').forEach(filterBtn => {
       filterBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1393,10 +1409,12 @@ function setupEventListeners() {
   });
 }
 
-// --- Real-Time AI Entity Detection Engine (COCO-SSD & Neural Vision) ---
+// --- Real-Time AI Entity Detection Engine (Ultralytics YOLOv8 & COCO-SSD) ---
 const aiDetectorState = {
   enabled: false,
+  engine: 'yolov8', // 'yolov8' | 'coco'
   model: null,
+  yoloModel: null,
   loading: false,
   filter: 'all', // 'all' | 'person' | 'vehicle' | 'animal'
   audioChime: true,
@@ -1405,10 +1423,28 @@ const aiDetectorState = {
 };
 
 async function initAiModel() {
-  if (aiDetectorState.model) return aiDetectorState.model;
+  aiDetectorState.loading = true;
+  updateAiUi();
+
+  // 1. Ultralytics YOLOv8 ONNX Engine
+  if (aiDetectorState.engine === 'yolov8') {
+    if (window.sentinelYolo) {
+      try {
+        await window.sentinelYolo.load();
+        aiDetectorState.yoloModel = window.sentinelYolo;
+        aiDetectorState.loading = false;
+        updateAiUi();
+        showToast('Ultralytics YOLOv8 Neural Vision active');
+        logEvent('AI', 'YOLOv8 Neural Vision Engine loaded (ONNX Runtime Web)');
+        return aiDetectorState.yoloModel;
+      } catch (err) {
+        console.warn('YOLOv8 load failed, falling back to COCO-SSD:', err);
+      }
+    }
+  }
+
+  // 2. Fallback: COCO-SSD MobileNet Engine
   if (window.cocoSsd) {
-    aiDetectorState.loading = true;
-    updateAiUi();
     try {
       aiDetectorState.model = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
       aiDetectorState.loading = false;
@@ -1418,10 +1454,11 @@ async function initAiModel() {
       return aiDetectorState.model;
     } catch (e) {
       console.warn('AI model load warning, fallback active:', e);
-      aiDetectorState.loading = false;
-      updateAiUi();
     }
   }
+
+  aiDetectorState.loading = false;
+  updateAiUi();
   return null;
 }
 
@@ -1436,7 +1473,9 @@ function updateAiUi() {
     btn.classList.toggle('loading', aiDetectorState.loading);
   }
   if (badge) {
-    badge.textContent = aiDetectorState.loading ? 'AI LOAD' : (aiDetectorState.enabled ? 'AI LIVE' : 'AI OFF');
+    badge.textContent = aiDetectorState.loading
+      ? 'AI LOAD'
+      : (aiDetectorState.enabled ? (aiDetectorState.engine === 'yolov8' ? 'YOLOv8 ON' : 'AI LIVE') : 'AI OFF');
   }
   if (stateLabel) {
     stateLabel.textContent = aiDetectorState.enabled ? 'ACTIVE' : 'OFF';
@@ -1453,10 +1492,10 @@ async function toggleEntityDetection() {
   updateAiUi();
 
   if (aiDetectorState.enabled) {
-    showToast('AI Entity Detection activated');
-    logEvent('AI', `AI Entity Vision scanning active (Filter: ${aiDetectorState.filter.toUpperCase()})`);
-    if (!aiDetectorState.model && !aiDetectorState.loading) {
-      initAiModel();
+    showToast(`AI Entity Detection activated (${aiDetectorState.engine.toUpperCase()})`);
+    logEvent('AI', `AI Entity Vision scanning active [${aiDetectorState.engine.toUpperCase()}] (Filter: ${aiDetectorState.filter.toUpperCase()})`);
+    if (!aiDetectorState.model && !aiDetectorState.yoloModel && !aiDetectorState.loading) {
+      await initAiModel();
     }
     startDetectionLoop();
   } else {
@@ -1516,7 +1555,19 @@ async function scanAllCameraFeeds() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     let detections = [];
-    if (aiDetectorState.model) {
+    if (aiDetectorState.engine === 'yolov8') {
+      const yolo = aiDetectorState.yoloModel || window.sentinelYolo;
+      if (yolo && yolo.session) {
+        try {
+          const raw = await yolo.detect(media, 0.38);
+          detections = filterDetections(raw, media, canvas);
+        } catch (err) {
+          console.warn('YOLOv8 inference error:', err);
+        }
+      } else if (!aiDetectorState.loading) {
+        initAiModel();
+      }
+    } else if (aiDetectorState.model) {
       try {
         const raw = await aiDetectorState.model.detect(media);
         detections = filterDetections(raw, media, canvas);
@@ -1629,7 +1680,8 @@ function renderDetectionReticles(ctx, canvas, detections, peer) {
     ctx.fill();
 
     // Tag Banner
-    const label = `${d.class.toUpperCase()} ${Math.round(d.score * 100)}%`;
+    const enginePrefix = (aiDetectorState.engine === 'yolov8') ? 'YOLOv8' : 'AI';
+    const label = `${enginePrefix} // ${d.class.toUpperCase()} ${Math.round(d.score * 100)}%`;
     ctx.font = 'bold 11px monospace';
     const textWidth = ctx.measureText(label).width;
 
