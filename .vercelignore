@@ -7,5 +7,12 @@ ssl/
 .DS_Store
 .git
 .vscode
+venv/
+*.pt
+__pycache__/
+*.pyc
 test-everything.js
 test-signaling.js
+test-dummy-cctv.js
+test-multi-host-and-users.js
+test-session-recovery.js
