@@ -33,3 +33,5 @@ data/
 venv/
 *.pt
 /yolov8n.onnx
+runs/
+datasets/

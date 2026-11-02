@@ -6,6 +6,7 @@ executes YOLOv8n neural inference, and displays annotated detections.
 """
 
 import os
+os.environ.setdefault('YOLO_CONFIG_DIR', '/tmp/Ultralytics')
 import sys
 import time
 import argparse
@@ -74,8 +75,11 @@ def start_web_server(port=8088):
 def parse_args():
     parser = argparse.ArgumentParser(description="Sentinel YOLOv8 Local Webcam Object Detection")
     parser.add_argument("--source", type=int, default=0, help="Webcam device index (default: 0)")
-    parser.add_argument("--model", type=str, default="yolov8n.pt", help="YOLOv8 weights path (default: yolov8n.pt)")
-    parser.add_argument("--conf", type=float, default=0.45, help="Confidence threshold (default: 0.45)")
+    parser.add_argument("--model", type=str, default="yolov8s.pt", help="YOLOv8 weights path (default: yolov8s.pt for higher accuracy, or yolov8n.pt)")
+    parser.add_argument("--conf", type=float, default=0.38, help="Confidence threshold (default: 0.38)")
+    parser.add_argument("--iou", type=float, default=0.45, help="IoU threshold for NMS (default: 0.45)")
+    parser.add_argument("--imgsz", type=int, default=640, help="Inference resolution (default: 640; use 1280 for small distant objects)")
+    parser.add_argument("--augment", action="store_true", help="Enable Test-Time Augmentation (TTA) for higher detection recall")
     parser.add_argument("--no-gui", action="store_true", help="Run in headless mode without cv2.imshow window")
     parser.add_argument("--web", action="store_true", default=True, help="Serve live MJPEG stream over HTTP (default: True)")
     parser.add_argument("--port", type=int, default=8088, help="HTTP MJPEG stream port (default: 8088)")
@@ -147,8 +151,15 @@ def main():
 
             frame_count += 1
 
-            # Execute YOLOv8 detection
-            results = model(frame, conf=args.conf, verbose=False)
+            # Execute YOLOv8 detection with enhanced inference parameters
+            results = model(
+                frame,
+                conf=args.conf,
+                iou=args.iou,
+                imgsz=args.imgsz,
+                augment=args.augment,
+                verbose=False
+            )
             result = results[0]
 
             # Render detection bounding boxes and labels
