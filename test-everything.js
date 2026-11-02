@@ -225,7 +225,7 @@ async function runTestSuite() {
   assert(extendRes.status === 200 && extendData.success && extendData.remainingSeconds > 600, 'Session duration successfully extended by +10 minutes');
 
   // --- 4. DATABASE & SERVERLESS SIGNALING TESTS ---
-  console.log('\n[4/5] Testing MongoDB Persistence & Serverless Signaling Gateways...');
+  console.log('\n[4/5] Testing Supabase Persistence & Serverless Signaling Gateways...');
 
   // Test 4.1: Database status endpoint
   const dbStatusRes = await fetch(`${BASE_URL}/api/db/status`);

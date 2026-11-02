@@ -1,7 +1,28 @@
 // SENTINEL // Scanned Remote Camera Script
 
+function extractCleanSessionId(raw) {
+  if (!raw) return null;
+  let val = String(raw).trim();
+  try {
+    val = decodeURIComponent(val).trim();
+  } catch (e) {}
+
+  if (val.includes('session=')) {
+    const m = val.match(/[?&]session=([a-zA-Z0-9_-]+)/);
+    if (m && m[1]) return m[1].trim().toLowerCase();
+  }
+  val = val.replace(/^[#?&]+/, '').trim();
+  if (val.includes('/')) {
+    const parts = val.split('/');
+    val = parts[parts.length - 1];
+    if (val.includes('?')) val = val.split('?')[1] || val;
+    if (val.includes('session=')) val = val.split('session=')[1].split('&')[0];
+  }
+  return val.toLowerCase();
+}
+
 const urlParams = new URLSearchParams(window.location.search);
-const sessionId = urlParams.get('session');
+let sessionId = extractCleanSessionId(urlParams.get('session'));
 
 let ws = null;
 let pc = null;
@@ -462,27 +483,66 @@ async function initCamera() {
     });
   });
 
-  // Handle manual session token entry if missing from URL
-  if (!sessionId) {
+  async function showManualSessionFallback(errorMessage) {
     const sessionManualBox = document.getElementById('sessionManualBox');
-    if (sessionManualBox) sessionManualBox.style.display = 'block';
+    if (sessionManualBox) {
+      sessionManualBox.style.display = 'block';
+    }
     const manualBtn = document.getElementById('btnManualConnect');
     const manualInput = document.getElementById('manualSessionInput');
     if (manualBtn && manualInput) {
-      manualBtn.addEventListener('click', () => {
-        const val = manualInput.value.trim();
+      const doConnect = () => {
+        const val = extractCleanSessionId(manualInput.value);
         if (val) {
           window.location.href = `/camera.html?session=${encodeURIComponent(val)}`;
         }
-      });
-      manualInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          const val = manualInput.value.trim();
-          if (val) window.location.href = `/camera.html?session=${encodeURIComponent(val)}`;
-        }
-      });
+      };
+      manualBtn.onclick = doConnect;
+      manualInput.onkeydown = (e) => {
+        if (e.key === 'Enter') doConnect();
+      };
     }
-    showError('Pairing key required. Please scan the QR code from the host monitor or enter the session key.');
+
+    // Auto-detect if an active session is currently running on the server
+    try {
+      const activeRes = await fetch('/api/sessions/active/latest');
+      if (activeRes.ok) {
+        const activeData = await activeRes.json();
+        if (activeData.sessionId && activeData.sessionId !== sessionId) {
+          let suggestionEl = document.getElementById('activeSessionSuggestion');
+          if (!suggestionEl && sessionManualBox) {
+            suggestionEl = document.createElement('div');
+            suggestionEl.id = 'activeSessionSuggestion';
+            suggestionEl.style.marginTop = '0.65rem';
+            sessionManualBox.appendChild(suggestionEl);
+          }
+          if (suggestionEl) {
+            suggestionEl.innerHTML = `
+              <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; text-align: left;">
+                <div style="font-size: 0.72rem; color: #10b981; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Active Host Gateway Detected</div>
+                <div style="font-size: 0.8rem; color: #ffffff; font-family: var(--font-mono); margin: 0.25rem 0;">#${activeData.sessionId} (${activeData.operator || 'Operator'})</div>
+                <button id="btnQuickJoinActive" class="btn btn-primary" style="width: 100%; padding: 0.45rem; font-size: 0.78rem; margin-top: 0.35rem;">
+                  ⚡ Connect to Active Session
+                </button>
+              </div>
+            `;
+            const btnQuickJoin = document.getElementById('btnQuickJoinActive');
+            if (btnQuickJoin) {
+              btnQuickJoin.addEventListener('click', () => {
+                window.location.href = `/camera.html?session=${encodeURIComponent(activeData.sessionId)}`;
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    showError(errorMessage);
+  }
+
+  // Handle manual session token entry if missing from URL
+  if (!sessionId) {
+    await showManualSessionFallback('Pairing key required. Please scan the QR code from the host monitor or enter the session key.');
     return;
   }
 
@@ -495,13 +555,17 @@ async function initCamera() {
     const res = await fetch(`/api/sessions/${sessionId}`);
     if (!res.ok) {
       if (res.status === 410) {
-        showError('This camera session has expired. Please ask the host for a new QR code.');
+        await showManualSessionFallback('This camera session has expired. Please ask the host for a new QR code or enter an active session key below.');
       } else {
-        showError('Session not found or already terminated.');
+        await showManualSessionFallback('Session not found or already terminated. Please check your pairing token or enter a valid session key below.');
       }
       return;
     }
     const sessionData = await res.json();
+    if (sessionData.sessionId) {
+      sessionId = sessionData.sessionId; // sync canonical id
+      if (sessionTokenDisplay) sessionTokenDisplay.textContent = sessionId;
+    }
     if (sessionData.sleepTimer) {
       camSleepTimer = sessionData.sleepTimer;
       updateCamSleepTimerUI();
@@ -703,7 +767,13 @@ function connectWebSocket() {
         break;
 
       case 'error':
-        showError(msg.message);
+        if (msg.message && (msg.message.includes('Session not found') || msg.message.includes('Invalid or expired session'))) {
+          const sessionManualBox = document.getElementById('sessionManualBox');
+          if (sessionManualBox) sessionManualBox.style.display = 'block';
+          showError('Session error: ' + msg.message + '. Please enter a valid pairing key.');
+        } else {
+          showError(msg.message);
+        }
         break;
     }
   };

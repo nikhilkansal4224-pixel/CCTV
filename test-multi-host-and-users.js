@@ -1,10 +1,12 @@
-// SENTINEL // Multi-Host Concurrent Viewing & MongoDB Atlas Verification Test
+// SENTINEL // Multi-Host Concurrent Viewing & Supabase Cloud Verification Test
 const WebSocket = require('ws');
-const { MongoClient } = require('mongodb');
+const { createClient } = require('@supabase/supabase-js');
 
 const BASE_URL = 'http://localhost:3000';
 const WS_URL = 'ws://localhost:3000';
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://Vercel-Admin-atlas-cyan-cable:GO5m4HuFO2Q7reXe@atlas-cyan-cable.x0vjscl.mongodb.net/?retryWrites=true&w=majority';
+
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ysqgsegtbczubssaumgq.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzcWdzZWd0YmN6dWJzc2F1bWdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI1NzU0NDYsImV4cCI6MjEwODE1MTQ0Nn0.tpDHSwqPru2HpFHRFsBNx-uwZACFUDNJw7lOrysASNI';
 
 let passed = 0;
 let failed = 0;
@@ -21,17 +23,14 @@ function assert(condition, message) {
 
 async function run() {
   console.log('\n======================================================');
-  console.log('  TESTING MULTI-HOST CONCURRENT VIEWING & MONGODB');
+  console.log('  TESTING MULTI-HOST CONCURRENT VIEWING & SUPABASE');
   console.log('======================================================\n');
 
-  // [1] Verify MongoDB Atlas connection directly
-  console.log('[1/4] Verifying MongoDB Atlas User Storage...');
-  const client = new MongoClient(MONGODB_URI);
-  await client.connect();
-  const db = client.db('sentinel_cctv');
-  const usersCollection = db.collection('users');
-  const count = await usersCollection.countDocuments();
-  assert(count > 0, `MongoDB Atlas "users" collection exists with ${count} users`);
+  // [1] Verify Supabase connection directly
+  console.log('[1/4] Verifying Supabase Postgres User Storage...');
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  const { data: usersList, error: countErr } = await supabase.from('users').select('*');
+  assert(!countErr && Array.isArray(usersList), `Supabase "users" table accessible via API (${usersList ? usersList.length : 0} existing users)`);
 
   // [2] Register new user with unique ID
   const testUser = `sync_user_${Date.now()}`;
@@ -49,10 +48,15 @@ async function run() {
   assert(regData.success, 'Registration endpoint returned success');
   assert(regData.user.userId && regData.user.userId.startsWith('USR-'), `Generated unique User ID: ${regData.user.userId}`);
 
-  // Verify in MongoDB Atlas directly
-  const savedUser = await usersCollection.findOne({ username: testUser });
-  assert(savedUser !== null, 'User document verified directly inside MongoDB Atlas');
-  assert(savedUser.userId === regData.user.userId, `MongoDB document has matching userId: ${savedUser.userId}`);
+  // Verify in Supabase directly
+  const { data: savedUser, error: findErr } = await supabase
+    .from('users')
+    .select('*')
+    .ilike('username', testUser)
+    .maybeSingle();
+
+  assert(!findErr && savedUser !== null, 'User row verified directly inside Supabase Postgres table');
+  assert(savedUser && savedUser.user_id === regData.user.userId, `Supabase row has matching user_id: ${savedUser?.user_id}`);
 
   // [3] Login and test multi-device session sync
   console.log('\n[2/4] Testing Multi-Device Session Synchronization...');
@@ -210,7 +214,6 @@ async function run() {
 
   cameraWs.close();
   host2Ws.close();
-  await client.close();
 
   console.log('\n======================================================');
   console.log(`  RESULTS: ${passed} Passed, ${failed} Failed`);

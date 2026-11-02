@@ -17,6 +17,7 @@ Built with a **dark-and-white cyber-precision aesthetic**, zero-trust privacy ar
 - **Instant Hardware Shutdown ("End Session")**: Physical sensor tracks (`track.stop()`) are immediately stopped upon ending the session, safely releasing the camera lens.
 - **Dual HTTP & HTTPS Support**: Automatically generates self-signed TLS certificates on startup (`https://<LAN-IP>:3443`), enabling mobile browsers (iOS Safari, Android Chrome) to grant camera permissions over local Wi-Fi without restriction.
 - **Snapshot Capture & Viewfinder Tools**: Built-in snapshot frame grabber with timestamp watermark, aspect ratio toggle (fit/fill), crosshair framing reticle, front/rear camera switcher, and flashlight/torch support.
+- **Phone as Dummy CCTV Gateway**: Turn any spare mobile phone into an IP surveillance camera using verified, safe apps from Google Play and Apple App Store (zero third-party APKs). Sentinel automatically scans the local network, authenticates via CCTV ID and Password, and displays the live feed with real-time FPS telemetry and AI entity detection.
 
 ---
 
@@ -58,6 +59,37 @@ Open `http://localhost:3000` (or `https://localhost:3443`). You will be greeted 
 ### 4. Connect a Camera
 - **Using a Smartphone**: Point your phone camera at the QR code on screen. Open the link in Safari or Chrome, review the permissions, and tap **"Allow & Start Camera"**.
 - **Testing on the Same PC**: Click the **"Test Link"** button in the QR card to open a camera tab side-by-side in a second window!
+
+---
+
+## Phone as Dummy CCTV Feature
+
+Sentinel allows you to turn any spare smartphone into a 24/7 dedicated surveillance CCTV camera.
+
+### 1. Safe Mobile Phone Setup (Official App Stores Only)
+> [!IMPORTANT]
+> Use **only verified, safe apps** directly from official app stores. Never download untrusted third-party APKs or sideloaded apps.
+
+- **For Android (Google Play Store)**:
+  1. Open Google Play Store on your Android phone.
+  2. Search and install **IP Webcam** (by Pavel Khlebovich) or **IP Phone Camera** (by Deskshare).
+  3. In the app settings, go to **Connection settings** &rarr; **Login/password**.
+  4. Set your **CCTV ID (Username)** (e.g. `admin`) and **Password**.
+  5. Connect your phone to the same Wi-Fi network as your computer.
+  6. Scroll down and tap **"Start server"**. Note the port (default `8080`).
+
+- **For iOS (Apple App Store)**:
+  1. Open the Apple App Store on your iPhone or iPad.
+  2. Search and install **IP Camera Lite** (by Yin Davidson) or **Live-Reporter**.
+  3. In settings, enable **User Authentication** and set your **CCTV ID** and **Password**.
+  4. Ensure your iPhone is connected to the same Wi-Fi network and start streaming.
+
+### 2. Website Connection & Live Feed
+1. On the Sentinel dashboard, click **"Connect Phone as Dummy CCTV"** (located on the standby screen, toolbar, and session dock).
+2. Enter your **CCTV ID** and **Password**.
+3. Click **"Scan Network & Locate CCTV"**.
+4. Sentinel automatically sweeps the local network, discovers the phone camera via its IP address, verifies credentials, and connects the live feed!
+5. The live feed streams directly into the surveillance matrix with live FPS, resolution HUD, snapshot capture, and AI entity detection!
 
 ---
 

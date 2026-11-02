@@ -10,6 +10,8 @@ const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const selfsigned = require('selfsigned');
 const auth = require('./auth');
+const db = require('./db');
+const ipcam = require('./ipcam');
 
 const app = express();
 app.use(express.json());
@@ -104,13 +106,166 @@ async function getOrGenerateCert() {
   return { key: pems.private, cert: pems.cert };
 }
 
-// In-Memory Session Storage
+// Persistent & In-Memory Session Storage
+const DATA_DIR = path.join(__dirname, 'data');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+
 // sessionId -> { id, userId, operator, createdAt, expiresAt, status: 'waiting'|'active'|'ended', hostWs, hosts: Map<hostViewerId, { ws, hostViewerId, userId }>, sleepTimer, cameras: Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, sleepTimer }> }
 const sessions = new Map();
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours max session lifetime (no forced 10-minute cutoff)
 
+function saveSessionsToFile() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const list = [];
+    const now = Date.now();
+    for (const s of sessions.values()) {
+      if (s.status !== 'ended' && s.expiresAt > now) {
+        list.push({
+          id: s.id,
+          userId: s.userId || null,
+          operator: s.operator || null,
+          createdAt: s.createdAt,
+          expiresAt: s.expiresAt,
+          status: s.status,
+          sleepTimer: s.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
+        });
+        // Sync active session to Supabase
+        db.saveSessionToSupabase(s).catch(() => {});
+      }
+    }
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(list, null, 2), 'utf8');
+  } catch (e) {
+    // Read-only filesystem / serverless notice
+  }
+}
+
+function loadSessionsFromFile() {
+  try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+      if (Array.isArray(data)) {
+        const now = Date.now();
+        for (const s of data) {
+          if (s.id && s.expiresAt > now && s.status !== 'ended') {
+            const canonicalId = String(s.id).trim().toLowerCase();
+            if (!sessions.has(canonicalId)) {
+              sessions.set(canonicalId, {
+                id: canonicalId,
+                userId: s.userId || null,
+                operator: s.operator || null,
+                createdAt: s.createdAt || now,
+                expiresAt: s.expiresAt,
+                status: s.status || 'waiting',
+                hostWs: null,
+                hosts: new Map(),
+                sleepTimer: s.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
+                cameras: new Map(),
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  // Sync active sessions from Supabase cloud
+  db.getActiveSessionsFromSupabase().then(remoteSessions => {
+    if (Array.isArray(remoteSessions)) {
+      const now = Date.now();
+      for (const s of remoteSessions) {
+        const canonicalId = String(s.id).trim().toLowerCase();
+        if (!sessions.has(canonicalId) && s.expiresAt > now && s.status !== 'ended') {
+          sessions.set(canonicalId, {
+            id: canonicalId,
+            userId: s.userId || null,
+            operator: s.operator || null,
+            createdAt: s.createdAt || now,
+            expiresAt: s.expiresAt,
+            status: s.status || 'waiting',
+            hostWs: null,
+            hosts: new Map(),
+            sleepTimer: s.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
+            cameras: new Map(),
+          });
+        }
+      }
+    }
+  }).catch(() => {});
+}
+
+// Initial restore on boot
+loadSessionsFromFile();
+
+function cleanSessionId(id) {
+  if (!id || typeof id !== 'string') return '';
+  let str = decodeURIComponent(id).trim();
+  if (str.includes('session=')) {
+    const match = str.match(/[?&]session=([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return match[1].trim().toLowerCase();
+    }
+  }
+  str = str.replace(/^[#?&]+/, '').trim();
+  if (str.includes('/')) {
+    const parts = str.split('/');
+    str = parts[parts.length - 1];
+    if (str.includes('?')) str = str.split('?')[1] || str;
+    if (str.includes('session=')) str = str.split('session=')[1].split('&')[0];
+  }
+  return str.toLowerCase();
+}
+
+function getSession(id, req = null) {
+  if (!id && !req) return null;
+
+  // Keyword lookup for active or current session
+  const rawLower = typeof id === 'string' ? id.trim().toLowerCase() : '';
+  if (rawLower === 'active' || rawLower === 'current') {
+    if (req && req.user) {
+      const userIdentifier = req.user.sub || req.user.id;
+      const userSessions = Array.from(sessions.values()).filter(
+        s => s.userId === userIdentifier && s.status !== 'ended' && s.expiresAt > Date.now()
+      );
+      if (userSessions.length > 0) {
+        return userSessions[userSessions.length - 1];
+      }
+    }
+    const active = Array.from(sessions.values()).filter(s => s.status !== 'ended' && s.expiresAt > Date.now());
+    if (active.length > 0) return active[active.length - 1];
+  }
+
+  const clean = cleanSessionId(id);
+  if (!clean) return null;
+
+  if (sessions.has(clean)) {
+    return sessions.get(clean);
+  }
+
+  for (const [key, s] of sessions.entries()) {
+    if (key.toLowerCase() === clean || (s.id && s.id.toLowerCase() === clean)) {
+      return s;
+    }
+  }
+
+  // Restore fallback from persistent file if server rebooted recently
+  loadSessionsFromFile();
+  if (sessions.has(clean)) {
+    return sessions.get(clean);
+  }
+  for (const [key, s] of sessions.entries()) {
+    if (key.toLowerCase() === clean || (s.id && s.id.toLowerCase() === clean)) {
+      return s;
+    }
+  }
+
+  return null;
+}
+
 function createSession(userId = null, operatorName = null) {
-  const id = crypto.randomBytes(6).toString('hex'); // 12-char hex ID
+  const id = crypto.randomBytes(6).toString('hex').toLowerCase(); // 12-char hex ID
   const now = Date.now();
   const session = {
     id,
@@ -125,6 +280,7 @@ function createSession(userId = null, operatorName = null) {
     cameras: new Map(), // Map<deviceId, { deviceId, deviceName, ws, status, joinedAt, facingMode, resolution, sleepTimer }>
   };
   sessions.set(id, session);
+  saveSessionsToFile();
   return session;
 }
 
@@ -235,6 +391,7 @@ function cleanupSessions() {
         }
       }
       sessions.delete(id);
+      saveSessionsToFile();
     }
   }
 }
@@ -278,7 +435,7 @@ app.use((req, res, next) => {
 
 // --- Authentication Endpoints ---
 
-// Operator Login (MongoDB + Local Fallback)
+// Operator Login (Supabase + Local Fallback)
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password, remember } = req.body;
@@ -310,7 +467,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Operator Registration (MongoDB + Local Fallback)
+// Operator Registration (Supabase + Local Fallback)
 app.post('/api/auth/register', async (req, res) => {
   const { username, password, role, displayName } = req.body;
   try {
@@ -431,9 +588,25 @@ app.post('/api/sessions/create', auth.requireAuth, async (req, res) => {
   });
 });
 
+// Retrieve current or latest active session for fast reconnection
+app.get('/api/sessions/active/latest', auth.optionalAuth, (req, res) => {
+  const session = getSession('active', req);
+  if (!session) {
+    return res.status(404).json({ error: 'No active session found' });
+  }
+  const now = Date.now();
+  res.json({
+    sessionId: session.id,
+    status: session.status,
+    expiresAt: session.expiresAt,
+    operator: session.operator || 'Operator',
+    remainingSeconds: Math.max(0, Math.floor((session.expiresAt - now) / 1000)),
+  });
+});
+
 // Get session details
-app.get('/api/sessions/:id', (req, res) => {
-  const session = sessions.get(req.params.id);
+app.get('/api/sessions/:id', auth.optionalAuth, (req, res) => {
+  const session = getSession(req.params.id, req);
   if (!session) {
     return res.status(404).json({ error: 'Session not found or expired' });
   }
@@ -441,6 +614,7 @@ app.get('/api/sessions/:id', (req, res) => {
   const now = Date.now();
   if (session.expiresAt <= now) {
     session.status = 'ended';
+    saveSessionsToFile();
     return res.status(410).json({ error: 'Session expired' });
   }
 
@@ -468,8 +642,8 @@ app.get('/api/sessions/:id', (req, res) => {
 });
 
 // Render QR code image as DataURL or SVG
-app.get('/api/sessions/:id/qr', async (req, res) => {
-  const session = sessions.get(req.params.id);
+app.get('/api/sessions/:id/qr', auth.optionalAuth, async (req, res) => {
+  const session = getSession(req.params.id, req);
   if (!session) {
     return res.status(404).send('Session expired or not found');
   }
@@ -494,8 +668,8 @@ app.get('/api/sessions/:id/qr', async (req, res) => {
 });
 
 // Explicitly terminate session
-app.post('/api/sessions/:id/end', (req, res) => {
-  const session = sessions.get(req.params.id);
+app.post('/api/sessions/:id/end', auth.optionalAuth, (req, res) => {
+  const session = getSession(req.params.id, req);
   if (session) {
     session.status = 'ended';
     const terminateMsg = JSON.stringify({ type: 'session-ended', sessionId: session.id, reason: 'Session ended by operator' });
@@ -510,13 +684,15 @@ app.post('/api/sessions/:id/end', (req, res) => {
       }
     }
     sessions.delete(session.id);
+    saveSessionsToFile();
+    db.deleteSessionFromSupabase(session.id).catch(() => {});
   }
   res.json({ success: true, message: 'Session terminated' });
 });
 
 // Explicitly disconnect a single camera device (keeps session and other cameras alive)
-app.post('/api/sessions/:id/cameras/:deviceId/end', (req, res) => {
-  const session = sessions.get(req.params.id);
+app.post('/api/sessions/:id/cameras/:deviceId/end', auth.optionalAuth, (req, res) => {
+  const session = getSession(req.params.id, req);
   if (session && session.cameras && session.cameras.has(req.params.deviceId)) {
     const cam = session.cameras.get(req.params.deviceId);
     if (cam.ws && cam.ws.readyState === 1) {
@@ -547,7 +723,7 @@ app.post('/api/sessions/:id/cameras/:deviceId/end', (req, res) => {
 // --- Serverless / Vercel HTTP Signaling Endpoints (Fallback when WebSocket unavailable) ---
 app.post('/api/signaling/send', (req, res) => {
   const { sessionId, target, sender, message } = req.body;
-  const session = sessions.get(sessionId);
+  const session = getSession(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -584,7 +760,7 @@ app.post('/api/signaling/send', (req, res) => {
 
 app.get('/api/signaling/poll', (req, res) => {
   const { sessionId, role, deviceId, since } = req.query;
-  const session = sessions.get(sessionId);
+  const session = getSession(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found', messages: [] });
   }
@@ -608,13 +784,14 @@ app.get('/api/signaling/poll', (req, res) => {
 
 // Extend active session duration (+10 minutes)
 app.post('/api/sessions/:id/extend', auth.optionalAuth, (req, res) => {
-  const session = sessions.get(req.params.id);
+  const session = getSession(req.params.id, req);
   if (!session || session.status === 'ended') {
     return res.status(404).json({ error: 'Session not found or already ended' });
   }
 
   const additionalMs = 10 * 60 * 1000;
   session.expiresAt = Math.max(Date.now(), session.expiresAt) + additionalMs;
+  saveSessionsToFile();
 
   const extendNotice = JSON.stringify({
     type: 'session-extended',
@@ -644,8 +821,8 @@ app.post('/api/sessions/:id/extend', auth.optionalAuth, (req, res) => {
 // Configure Sleep Timer:
 // target: 'all' (Master Sleep Timer) or specific deviceId (e.g. 'CAM-XXXX')
 // minutes: 0 / null (turn off) or positive number (e.g. 5, 15, 30, 60, 120)
-app.post('/api/sessions/:id/sleep-timer', (req, res) => {
-  const session = sessions.get(req.params.id);
+app.post('/api/sessions/:id/sleep-timer', auth.optionalAuth, (req, res) => {
+  const session = getSession(req.params.id, req);
   if (!session || session.status === 'ended') {
     return res.status(404).json({ error: 'Session not found or already ended' });
   }
@@ -730,6 +907,36 @@ app.post('/api/sessions/:id/sleep-timer', (req, res) => {
   }
 });
 
+// --- Phone as Dummy CCTV & IP Camera Integration Endpoints ---
+app.post('/api/ipcam/scan', auth.optionalAuth, async (req, res) => {
+  try {
+    const { username, password, ip, port, subnet } = req.body || {};
+    const result = await ipcam.scanNetwork({
+      username: username || 'admin',
+      password: password || '',
+      targetIp: ip,
+      port: port ? Number(port) : null,
+      subnet,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('[IPCam Scan Error]', err);
+    res.status(500).json({ error: 'Failed to scan network for IP Camera', message: err.message });
+  }
+});
+
+app.get('/api/ipcam/stream', (req, res) => {
+  ipcam.proxyStream(req, res);
+});
+
+app.get('/api/ipcam/snapshot', (req, res) => {
+  ipcam.proxySnapshot(req, res);
+});
+
+app.get('/api/ipcam/mock-feed', (req, res) => {
+  ipcam.createMockMjpegStream(req, res, req.query.user || 'admin');
+});
+
 async function start() {
   const sslCredentials = await getOrGenerateCert();
 
@@ -767,7 +974,7 @@ async function start() {
 
       if (type === 'join') {
         const { role } = data;
-        const session = sessions.get(sessionId);
+        const session = getSession(sessionId);
         if (!session) {
           return ws.send(JSON.stringify({ type: 'error', message: 'Invalid or expired session ID' }));
         }
@@ -775,7 +982,7 @@ async function start() {
           return ws.send(JSON.stringify({ type: 'error', message: 'Session has already ended' }));
         }
 
-        boundSessionId = sessionId;
+        boundSessionId = session.id;
         boundRole = role;
 
         if (role === 'host') {
@@ -870,7 +1077,7 @@ async function start() {
       }
 
       // All subsequent signaling messages require an active session
-      const currentSession = sessions.get(boundSessionId || sessionId);
+      const currentSession = getSession(boundSessionId || sessionId);
       if (!currentSession) {
         return ws.send(JSON.stringify({ type: 'error', message: 'Session not found' }));
       }
@@ -1111,6 +1318,7 @@ async function start() {
           }
         }
         sessions.delete(currentSession.id);
+        saveSessionsToFile();
         return;
       }
 
@@ -1123,7 +1331,7 @@ async function start() {
 
     ws.on('close', () => {
       if (boundSessionId) {
-        const session = sessions.get(boundSessionId);
+        const session = getSession(boundSessionId);
         if (session) {
           if (boundRole === 'camera' && boundDeviceId) {
             session.cameras.delete(boundDeviceId);

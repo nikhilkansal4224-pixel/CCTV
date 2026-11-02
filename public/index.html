@@ -120,7 +120,7 @@
             Scan the temporary QR code with <strong>one or multiple smartphones or secondary devices</strong> to stream live multi-angle video to this matrix.
           </p>
 
-          <!-- Add Camera of Current Device Direct Action -->
+          <!-- Add Camera of Current Device & Phone Dummy CCTV Actions -->
           <div class="standby-actions-group">
             <button class="btn-host-add-cam" id="btnHostAddLocalCamera" title="Add Current Device's Camera to Matrix">
               <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -128,6 +128,12 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v6m3-3H9" />
               </svg>
               <span>Add Camera of Current Device</span>
+            </button>
+            <button class="btn-host-add-cam btn-add-dummy-cctv" id="btnHostAddDummyCctv" title="Connect Phone as Dummy CCTV (IP Camera)" style="background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+              <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <span>Connect Phone as Dummy CCTV</span>
             </button>
             <span class="standby-or-tag">OR SCAN QR CODE WITH SMARTPHONE</span>
           </div>
@@ -205,6 +211,13 @@
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v6m3-3H9" />
+            </svg>
+          </button>
+
+          <!-- Connect Phone as Dummy CCTV Quick Toolbar Button -->
+          <button class="btn-icon" id="btnQuickAddDummyCctv" title="Connect Phone as Dummy CCTV" style="border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
           </button>
 
@@ -364,6 +377,14 @@
             </svg>
             <span>+ Add Current Device Camera</span>
           </button>
+
+          <!-- Connect Phone as Dummy CCTV in Sidebar -->
+          <button class="btn btn-outline" id="btnDockAddDummyCctv" title="Connect Phone as Dummy CCTV" style="width: 100%; margin-top: 0.45rem; border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span>+ Connect Phone Dummy CCTV</span>
+          </button>
         </div>
       </div>
 
@@ -425,6 +446,194 @@
     </aside>
 
   </main>
+
+  <!-- Phone as Dummy CCTV Modal -->
+  <div class="cctv-modal-backdrop" id="dummyCctvModal" style="display: none;">
+    <div class="cctv-modal-box">
+      <!-- Modal Header -->
+      <div class="cctv-modal-header">
+        <div class="cctv-modal-title-group">
+          <div class="cctv-icon-badge">
+            <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="cctv-modal-title">Phone as Dummy CCTV</h2>
+            <p class="cctv-modal-desc">Turn any mobile phone into a surveillance camera with safe official apps</p>
+          </div>
+        </div>
+        <button class="cctv-modal-close" id="btnCloseCctvModal" title="Close Modal">&times;</button>
+      </div>
+
+      <!-- Modal Tabs -->
+      <div class="cctv-modal-tabs">
+        <button class="cctv-tab-btn active" id="tabBtnCctvConnect" data-tab="connect">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          <span>Connect CCTV Feed</span>
+        </button>
+        <button class="cctv-tab-btn" id="tabBtnCctvGuide" data-tab="guide">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>Official Safe App Setup Guide</span>
+        </button>
+      </div>
+
+      <!-- Tab Content 1: Connect CCTV Feed -->
+      <div class="cctv-tab-content active" id="cctvTabConnect">
+        <div class="cctv-form-group">
+          <label class="cctv-label" for="cctvInputUser">CCTV ID / Username</label>
+          <div class="cctv-input-wrap">
+            <span class="cctv-input-icon">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </span>
+            <input type="text" id="cctvInputUser" class="cctv-input" placeholder="e.g. admin or phone-cctv" value="admin">
+          </div>
+          <span class="cctv-help-text">The username or CCTV ID configured in your phone's camera app.</span>
+        </div>
+
+        <div class="cctv-form-group">
+          <label class="cctv-label" for="cctvInputPass">CCTV Password</label>
+          <div class="cctv-input-wrap">
+            <span class="cctv-input-icon">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </span>
+            <input type="password" id="cctvInputPass" class="cctv-input" placeholder="Enter CCTV password">
+            <button type="button" class="cctv-btn-toggle-pass" id="btnToggleCctvPass" title="Toggle password visibility">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+          <span class="cctv-help-text">Password configured in the phone app (e.g. IP Webcam &rarr; Login/password).</span>
+        </div>
+
+        <!-- Optional IP / Discovery Customization -->
+        <div class="cctv-advanced-box">
+          <div class="cctv-advanced-toggle" id="btnToggleCctvAdvanced">
+            <span style="display: flex; align-items: center; gap: 0.4rem;">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Network Discovery Options (Optional)</span>
+            </span>
+            <span class="cctv-chevron" id="cctvAdvancedChevron">▼</span>
+          </div>
+
+          <div class="cctv-advanced-body" id="cctvAdvancedBody" style="display: none;">
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.65rem;">
+              <div>
+                <label class="cctv-label" for="cctvInputIp">Phone IP Address (Optional)</label>
+                <input type="text" id="cctvInputIp" class="cctv-input" placeholder="Leave empty for Auto-Scan">
+                <span class="cctv-help-text">Leave empty to auto-scan local network, or enter IP shown on phone screen.</span>
+              </div>
+              <div>
+                <label class="cctv-label" for="cctvInputPort">Port</label>
+                <input type="number" id="cctvInputPort" class="cctv-input" placeholder="8080" value="8080">
+                <div class="cctv-port-chips">
+                  <button type="button" class="cctv-chip active" data-port="8080">8080</button>
+                  <button type="button" class="cctv-chip" data-port="8081">8081</button>
+                  <button type="button" class="cctv-chip" data-port="4747">4747</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scanning Status & Progress -->
+        <div class="cctv-scan-status" id="cctvScanStatus" style="display: none;">
+          <div class="cctv-radar-mini"></div>
+          <div class="cctv-status-meta">
+            <span class="cctv-status-headline" id="cctvStatusHeadline">Scanning Network...</span>
+            <span class="cctv-status-detail" id="cctvStatusDetail">Probing subnet for responsive IP cameras...</span>
+          </div>
+        </div>
+
+        <!-- Discovered Cameras Results Box -->
+        <div class="cctv-results-box" id="cctvResultsBox" style="display: none;">
+          <div class="cctv-results-title">Discovered Dummy CCTV Feeds:</div>
+          <div class="cctv-results-list" id="cctvResultsList"></div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="cctv-modal-actions">
+          <button type="button" class="btn btn-outline" id="btnCancelCctvModal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnScanCctvNetwork">
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span id="btnScanLabel">Scan Network & Locate CCTV</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab Content 2: Setup Guide (Safe & Official Apps) -->
+      <div class="cctv-tab-content" id="cctvTabGuide" style="display: none;">
+        <div class="cctv-guide-banner">
+          <div class="cctv-guide-shield">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <div>
+            <strong>Verified Safe Apps Only:</strong> Never install third-party APKs or unofficial downloads. Only install verified, free applications directly from official Google Play Store or Apple App Store.
+          </div>
+        </div>
+
+        <div class="cctv-guide-cards">
+          <!-- Android Card -->
+          <div class="cctv-os-card">
+            <div class="cctv-os-header">
+              <span class="cctv-os-badge android">ANDROID (GOOGLE PLAY)</span>
+              <span class="cctv-os-status">Verified 50M+ Downloads</span>
+            </div>
+            <h4 class="cctv-app-name">IP Webcam (by Pavel Khlebovich)</h4>
+            <ol class="cctv-steps-list">
+              <li>Open <strong>Google Play Store</strong> on your phone.</li>
+              <li>Search and install <strong>IP Webcam</strong> (free, official app).</li>
+              <li>Open IP Webcam, scroll to <strong>Connection settings</strong> &rarr; <strong>Login/password</strong>.</li>
+              <li>Enter your chosen <strong>CCTV ID (Username)</strong> and <strong>Password</strong>.</li>
+              <li>Connect your phone to the <strong>same Wi-Fi network</strong> as Sentinel.</li>
+              <li>Scroll to the bottom and tap <strong>"Start server"</strong>.</li>
+              <li>Note the address shown on your screen (e.g., <code>http://192.168.1.XX:8080</code>).</li>
+            </ol>
+          </div>
+
+          <!-- iOS Card -->
+          <div class="cctv-os-card">
+            <div class="cctv-os-header">
+              <span class="cctv-os-badge ios">iOS (APPLE APP STORE)</span>
+              <span class="cctv-os-status">Verified Safe</span>
+            </div>
+            <h4 class="cctv-app-name">IP Camera Lite (by Yin Davidson) / Live-Reporter</h4>
+            <ol class="cctv-steps-list">
+              <li>Open <strong>Apple App Store</strong> on your iPhone / iPad.</li>
+              <li>Search and install <strong>IP Camera Lite</strong> or <strong>Live-Reporter</strong> (free).</li>
+              <li>Go to App Settings &rarr; enable <strong>User Authentication</strong>.</li>
+              <li>Set your <strong>CCTV ID (Username)</strong> and <strong>Password</strong>.</li>
+              <li>Ensure your iPhone is connected to the <strong>same Wi-Fi network</strong>.</li>
+              <li>Tap the camera icon to <strong>Start Broadcast</strong>.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div style="margin-top: 1.25rem; text-align: right;">
+          <button type="button" class="btn btn-primary" id="btnGuideSwitchToConnect">
+            <span>Ready? Connect CCTV Feed &rarr;</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/js/webrtc-common.js"></script>
   <script src="/js/host.js"></script>

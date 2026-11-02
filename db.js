@@ -1,94 +1,156 @@
-// SENTINEL // MongoDB Connection & Persistence Layer
-const { MongoClient } = require('mongodb');
+// SENTINEL // Supabase Connection & Persistence Layer
+const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 
-let client = null;
-let db = null;
-let usersCollection = null;
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ysqgsegtbczubssaumgq.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzcWdzZWd0YmN6dWJzc2F1bWdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI1NzU0NDYsImV4cCI6MjEwODE1MTQ0Nn0.tpDHSwqPru2HpFHRFsBNx-uwZACFUDNJw7lOrysASNI';
+
+let supabase = null;
 let isConnected = false;
+let memoryUsers = [];
 
-const MONGODB_URI = process.env.MONGODB_URI || null;
-const DB_NAME = process.env.MONGODB_DB_NAME || 'sentinel_cctv';
+function rowToUser(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    username: row.username,
+    hash: row.hash,
+    salt: row.salt,
+    role: row.role || 'Security Operator',
+    displayName: row.display_name || row.username,
+    createdAt: row.created_at,
+    lastLoginAt: row.last_login_at,
+    activeSessionId: row.active_session_id || null,
+  };
+}
 
-// Connect to MongoDB if URI is provided
+function userToRow(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    user_id: user.userId || user.user_id,
+    username: (user.username || '').trim().toLowerCase(),
+    hash: user.hash,
+    salt: user.salt,
+    role: user.role || 'Security Operator',
+    display_name: user.displayName || user.display_name || user.username,
+    created_at: user.createdAt || user.created_at || new Date().toISOString(),
+    last_login_at: user.lastLoginAt || user.last_login_at || null,
+    active_session_id: user.activeSessionId || user.active_session_id || null,
+  };
+}
+
+function updatesToRow(updates) {
+  const row = {};
+  if (updates.userId !== undefined) row.user_id = updates.userId;
+  if (updates.user_id !== undefined) row.user_id = updates.user_id;
+  if (updates.displayName !== undefined) row.display_name = updates.displayName;
+  if (updates.display_name !== undefined) row.display_name = updates.display_name;
+  if (updates.lastLoginAt !== undefined) row.last_login_at = updates.lastLoginAt;
+  if (updates.last_login_at !== undefined) row.last_login_at = updates.last_login_at;
+  if (updates.activeSessionId !== undefined) row.active_session_id = updates.activeSessionId;
+  if (updates.active_session_id !== undefined) row.active_session_id = updates.active_session_id;
+  if (updates.role !== undefined) row.role = updates.role;
+  if (updates.hash !== undefined) row.hash = updates.hash;
+  if (updates.salt !== undefined) row.salt = updates.salt;
+  return row;
+}
+
+// Connect to Supabase
 async function connectDB() {
-  if (isConnected && db) {
-    return { isConnected: true, db, usersCollection };
+  if (isConnected && supabase) {
+    return { isConnected: true, supabase };
   }
 
-  if (!MONGODB_URI) {
-    // MongoDB URI not configured, using JSON file storage fallback
-    return { isConnected: false, db: null, usersCollection: null };
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    // Supabase credentials not configured, use local JSON fallback
+    return { isConnected: false, supabase: null };
   }
 
   try {
-    client = new MongoClient(MONGODB_URI, {
-      connectTimeoutMS: 5000,
-      serverSelectionTimeoutMS: 5000,
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
     });
-    await client.connect();
-    db = client.db(DB_NAME);
-    usersCollection = db.collection('users');
 
-    // Create unique index on username
-    await usersCollection.createIndex({ username: 1 }, { unique: true });
+    // Test connection with lightweight select
+    const { error } = await supabase.from('users').select('id').limit(1);
+    if (error) {
+      throw error;
+    }
 
     isConnected = true;
-    console.log(`[Database] Successfully connected to MongoDB database: "${DB_NAME}"`);
+    console.log(`[Database] Successfully connected to Supabase: "${SUPABASE_URL}"`);
 
-    // Sync any local users from data/users.json into MongoDB if not present
-    await syncLocalUsersToMongo();
+    // Sync any local users from data/users.json into Supabase if not present
+    await syncLocalUsersToSupabase();
 
-    return { isConnected: true, db, usersCollection };
+    return { isConnected: true, supabase };
   } catch (err) {
-    console.warn(`[Database] MongoDB connection failed (${err.message}). Using local storage fallback.`);
+    console.warn(`[Database] Supabase connection notice (${err.message}). Using local storage fallback.`);
     isConnected = false;
-    client = null;
-    db = null;
-    usersCollection = null;
-    return { isConnected: false, db: null, usersCollection: null };
+    return { isConnected: false, supabase: null };
   }
 }
 
-// Sync users from users.json into MongoDB upon initial connection
-async function syncLocalUsersToMongo() {
-  if (!usersCollection || !fs.existsSync(USERS_FILE)) return;
+// Sync users from users.json into Supabase upon initial connection
+async function syncLocalUsersToSupabase() {
+  if (!supabase || !isConnected || !fs.existsSync(USERS_FILE)) return;
   try {
     const content = fs.readFileSync(USERS_FILE, 'utf8');
     const localUsers = JSON.parse(content);
     if (Array.isArray(localUsers)) {
       for (const u of localUsers) {
-        await usersCollection.updateOne(
-          { username: u.username },
-          { $setOnInsert: u },
-          { upsert: true }
-        );
+        const row = userToRow(u);
+        await supabase.from('users').upsert(row, { onConflict: 'username' });
       }
     }
   } catch (e) {
-    console.warn('[Database] Sync local users to Mongo notice:', e.message);
+    console.warn('[Database] Sync local users to Supabase notice:', e.message);
   }
 }
 
-let memoryUsers = [];
+let connectionPromise = null;
+
+// Ensure database connection in serverless / cold-start environments
+async function ensureConnected() {
+  if (isConnected && supabase) return;
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  if (!connectionPromise) {
+    connectionPromise = connectDB().finally(() => {
+      connectionPromise = null;
+    });
+  }
+  await connectionPromise;
+}
 
 // User Model Operations
 async function findUserByUsername(username) {
   const cleanUsername = (username || '').trim().toLowerCase();
   if (!cleanUsername) return null;
 
-  if (isConnected && usersCollection) {
+  await ensureConnected();
+
+  if (isConnected && supabase) {
     try {
-      const user = await usersCollection.findOne({
-        username: { $regex: new RegExp(`^${cleanUsername}$`, 'i') },
-      });
-      return user;
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('username', cleanUsername)
+        .maybeSingle();
+
+      if (!error && data) {
+        return rowToUser(data);
+      }
     } catch (e) {
-      console.warn('[Database] Mongo findUser error, checking local fallback:', e.message);
+      console.warn('[Database] Supabase findUser error, checking local fallback:', e.message);
     }
   }
 
@@ -106,14 +168,24 @@ async function findUserByUsername(username) {
 }
 
 async function insertUser(newUser) {
-  if (isConnected && usersCollection) {
+  await ensureConnected();
+  const row = userToRow(newUser);
+
+  if (isConnected && supabase) {
     try {
-      await usersCollection.insertOne(newUser);
-      // Also update local file cache
-      updateLocalFile(newUser);
-      return newUser;
+      const { data, error } = await supabase
+        .from('users')
+        .insert(row)
+        .select()
+        .maybeSingle();
+
+      if (!error && data) {
+        updateLocalFile(newUser);
+        return rowToUser(data);
+      }
+      console.warn('[Database] Supabase insertUser warning:', error ? error.message : 'no data');
     } catch (e) {
-      console.warn('[Database] Mongo insertUser error, using local fallback:', e.message);
+      console.warn('[Database] Supabase insertUser error, using local fallback:', e.message);
     }
   }
 
@@ -123,10 +195,17 @@ async function insertUser(newUser) {
 }
 
 async function getAllUsers() {
-  if (isConnected && usersCollection) {
+  await ensureConnected();
+  if (isConnected && supabase) {
     try {
-      const users = await usersCollection.find({}).toArray();
-      return users;
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        return data.map(rowToUser);
+      }
     } catch (e) {
       // Fallback
     }
@@ -175,14 +254,21 @@ function updateLocalFile(newUser) {
 
 async function findUserById(idOrUserId) {
   if (!idOrUserId) return null;
-  if (isConnected && usersCollection) {
+  await ensureConnected();
+
+  if (isConnected && supabase) {
     try {
-      const user = await usersCollection.findOne({
-        $or: [{ id: idOrUserId }, { userId: idOrUserId }],
-      });
-      return user;
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .or(`id.eq.${idOrUserId},user_id.eq.${idOrUserId}`)
+        .maybeSingle();
+
+      if (!error && data) {
+        return rowToUser(data);
+      }
     } catch (e) {
-      console.warn('[Database] Mongo findUserById error:', e.message);
+      console.warn('[Database] Supabase findUserById error:', e.message);
     }
   }
 
@@ -192,19 +278,23 @@ async function findUserById(idOrUserId) {
 
 async function updateUser(usernameOrId, updates) {
   if (!usernameOrId || !updates) return false;
-  if (isConnected && usersCollection) {
+  await ensureConnected();
+
+  const rowUpdates = updatesToRow(updates);
+
+  if (isConnected && supabase) {
     try {
-      await usersCollection.updateOne(
-        { $or: [{ username: usernameOrId }, { id: usernameOrId }, { userId: usernameOrId }] },
-        { $set: updates }
-      );
+      await supabase
+        .from('users')
+        .update(rowUpdates)
+        .or(`username.ilike.${usernameOrId},id.eq.${usernameOrId},user_id.eq.${usernameOrId}`);
     } catch (e) {
-      console.warn('[Database] Mongo updateUser error:', e.message);
+      console.warn('[Database] Supabase updateUser error:', e.message);
     }
   }
 
   // Update in local cache
-  const mIdx = memoryUsers.findIndex(u => u.username === usernameOrId || u.id === usernameOrId || u.userId === usernameOrId);
+  const mIdx = memoryUsers.findIndex(u => u.username.toLowerCase() === usernameOrId.toLowerCase() || u.id === usernameOrId || u.userId === usernameOrId);
   if (mIdx >= 0) {
     memoryUsers[mIdx] = { ...memoryUsers[mIdx], ...updates };
   }
@@ -212,7 +302,7 @@ async function updateUser(usernameOrId, updates) {
   try {
     if (fs.existsSync(USERS_FILE)) {
       const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-      const idx = users.findIndex(u => u.username === usernameOrId || u.id === usernameOrId || u.userId === usernameOrId);
+      const idx = users.findIndex(u => u.username.toLowerCase() === usernameOrId.toLowerCase() || u.id === usernameOrId || u.userId === usernameOrId);
       if (idx >= 0) {
         users[idx] = { ...users[idx], ...updates };
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
@@ -222,13 +312,72 @@ async function updateUser(usernameOrId, updates) {
   return true;
 }
 
+// Session Model Operations in Supabase
+async function saveSessionToSupabase(session) {
+  await ensureConnected();
+  if (!isConnected || !supabase || !session) return false;
+  try {
+    const row = {
+      id: session.id,
+      user_id: session.userId || null,
+      operator: session.operator || null,
+      created_at: session.createdAt,
+      expires_at: session.expiresAt,
+      status: session.status || 'waiting',
+      sleep_timer: session.sleepTimer || { active: false, expiresAt: null, durationMinutes: null },
+    };
+    await supabase.from('sessions').upsert(row, { onConflict: 'id' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function deleteSessionFromSupabase(id) {
+  await ensureConnected();
+  if (!isConnected || !supabase || !id) return false;
+  try {
+    await supabase.from('sessions').delete().eq('id', id);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function getActiveSessionsFromSupabase() {
+  await ensureConnected();
+  if (!isConnected || !supabase) return [];
+  try {
+    const now = Date.now();
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .gt('expires_at', now)
+      .neq('status', 'ended');
+
+    if (!error && Array.isArray(data)) {
+      return data.map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        operator: row.operator,
+        createdAt: Number(row.created_at),
+        expiresAt: Number(row.expires_at),
+        status: row.status,
+        sleepTimer: row.sleep_timer || { active: false, expiresAt: null, durationMinutes: null },
+      }));
+    }
+  } catch (e) {}
+  return [];
+}
+
 function getStatus() {
   return {
     success: true,
-    mode: isConnected ? 'mongodb' : 'local_fallback',
-    database: isConnected ? 'mongodb' : 'file_fallback',
+    mode: isConnected ? 'supabase' : 'local_fallback',
+    database: isConnected ? 'supabase' : 'file_fallback',
     connected: isConnected,
-    dbName: isConnected ? DB_NAME : 'local_json',
+    dbName: isConnected ? 'supabase_postgres' : 'local_json',
+    supabaseUrl: SUPABASE_URL,
   };
 }
 
@@ -239,5 +388,9 @@ module.exports = {
   updateUser,
   insertUser,
   getAllUsers,
+  saveSessionToSupabase,
+  deleteSessionFromSupabase,
+  getActiveSessionsFromSupabase,
   getStatus,
+  getSupabaseClient: () => supabase,
 };

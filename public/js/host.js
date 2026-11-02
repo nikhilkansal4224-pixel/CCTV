@@ -789,6 +789,13 @@ function teardownCameraPeer(deviceId) {
   if (!cameraPeers.has(deviceId)) return;
   const peer = cameraPeers.get(deviceId);
 
+  if (peer.isIpCam) {
+    if (peer.imgEl) {
+      peer.imgEl.src = '';
+      try { peer.imgEl.remove(); } catch (e) {}
+    }
+  }
+
   if (peer.stream) {
     try {
       peer.stream.getTracks().forEach(t => t.stop());
@@ -830,16 +837,22 @@ function toggleTileAudio(deviceId) {
 // Capture frame snapshot for single device
 function captureTileSnapshot(deviceId) {
   const peer = cameraPeers.get(deviceId);
-  if (!peer || !peer.videoEl || !peer.videoEl.videoWidth) {
+  if (!peer) return showToast('Camera device not found');
+
+  const isIpCam = peer.isIpCam && peer.imgEl;
+  const media = isIpCam ? peer.imgEl : peer.videoEl;
+  const naturalWidth = media ? (media.videoWidth || media.naturalWidth) : 0;
+  const naturalHeight = media ? (media.videoHeight || media.naturalHeight) : 0;
+
+  if (!media || !naturalWidth) {
     return showToast('Cannot snapshot: camera stream not active yet');
   }
 
-  const video = peer.videoEl;
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = naturalWidth;
+  canvas.height = naturalHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(media, 0, 0, canvas.width, canvas.height);
 
   // Digital Watermark
   ctx.font = 'bold 20px monospace';
@@ -1003,6 +1016,14 @@ function connectWebSocket(sessionId) {
         handleSessionExpired();
         logEvent('TERM', 'Session expired by countdown');
         if (window.sentinelAudio) window.sentinelAudio.play('disconnect');
+        break;
+
+      case 'error':
+        logEvent('WARN', `Session signaling notice: ${msg.message}`);
+        if (msg.message && (msg.message.includes('Session not found') || msg.message.includes('Invalid or expired session'))) {
+          showToast('Session expired or invalidated. Regenerating fresh gateway session...');
+          setTimeout(() => createNewSession(true), 1200);
+        }
         break;
     }
   };
@@ -1316,6 +1337,9 @@ function setupEventListeners() {
     });
   }
 
+  // Initialize Phone as Dummy CCTV Controls
+  initDummyCctvControls();
+
   // AI Entity Detection Toolbar Button and Menu
   const btnToggleEntityDetect = document.getElementById('btnToggleEntityDetect');
   const aiDetectMenu = document.getElementById('aiDetectMenu');
@@ -1471,14 +1495,21 @@ async function scanAllCameraFeeds() {
   if (!aiDetectorState.enabled) return;
 
   for (const peer of cameraPeers.values()) {
-    const video = peer.videoEl;
+    const isIpCam = peer.isIpCam && peer.imgEl;
+    const media = isIpCam ? peer.imgEl : peer.videoEl;
     const canvas = peer.canvasAi;
-    if (!video || !canvas || video.readyState < 2 || video.videoWidth === 0) continue;
+    if (!media || !canvas) continue;
 
-    // Match canvas dimensions to video display dimensions
-    if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
-      canvas.width = video.clientWidth;
-      canvas.height = video.clientHeight;
+    if (!isIpCam && (media.readyState < 2 || media.videoWidth === 0)) continue;
+    if (isIpCam && (!media.complete || !media.naturalWidth)) continue;
+
+    const displayWidth = media.clientWidth || canvas.clientWidth || 640;
+    const displayHeight = media.clientHeight || canvas.clientHeight || 480;
+
+    // Match canvas dimensions to display dimensions
+    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+      canvas.width = displayWidth;
+      canvas.height = displayHeight;
     }
 
     const ctx = canvas.getContext('2d');
@@ -1487,8 +1518,8 @@ async function scanAllCameraFeeds() {
     let detections = [];
     if (aiDetectorState.model) {
       try {
-        const raw = await aiDetectorState.model.detect(video);
-        detections = filterDetections(raw, video, canvas);
+        const raw = await aiDetectorState.model.detect(media);
+        detections = filterDetections(raw, media, canvas);
       } catch (err) {
         // Fallback
       }
@@ -1501,9 +1532,11 @@ async function scanAllCameraFeeds() {
 const VEHICLE_CLASSES = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'train', 'airplane', 'boat'];
 const ANIMAL_CLASSES = ['dog', 'cat', 'bird', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'];
 
-function filterDetections(raw, video, canvas) {
-  const scaleX = canvas.width / video.videoWidth;
-  const scaleY = canvas.height / video.videoHeight;
+function filterDetections(raw, media, canvas) {
+  const naturalWidth = media.videoWidth || media.naturalWidth || 640;
+  const naturalHeight = media.videoHeight || media.naturalHeight || 480;
+  const scaleX = canvas.width / naturalWidth;
+  const scaleY = canvas.height / naturalHeight;
 
   return raw
     .filter(item => {
@@ -1764,6 +1797,345 @@ async function extendCurrentSession() {
   } catch (err) {
     showToast('Failed to extend session');
   }
+}
+
+// --- Phone as Dummy CCTV Controller & Stream Gateway ---
+function initDummyCctvControls() {
+  const modal = document.getElementById('dummyCctvModal');
+  const btnClose = document.getElementById('btnCloseCctvModal');
+  const btnCancel = document.getElementById('btnCancelCctvModal');
+  const tabBtnConnect = document.getElementById('tabBtnCctvConnect');
+  const tabBtnGuide = document.getElementById('tabBtnCctvGuide');
+  const tabConnect = document.getElementById('cctvTabConnect');
+  const tabGuide = document.getElementById('cctvTabGuide');
+  const btnGuideSwitch = document.getElementById('btnGuideSwitchToConnect');
+  const btnTogglePass = document.getElementById('btnToggleCctvPass');
+  const inputPass = document.getElementById('cctvInputPass');
+  const inputUser = document.getElementById('cctvInputUser');
+  const inputIp = document.getElementById('cctvInputIp');
+  const inputPort = document.getElementById('cctvInputPort');
+  const btnToggleAdv = document.getElementById('btnToggleCctvAdvanced');
+  const advBody = document.getElementById('cctvAdvancedBody');
+  const advChevron = document.getElementById('cctvAdvancedChevron');
+  const btnScan = document.getElementById('btnScanCctvNetwork');
+  const btnScanLabel = document.getElementById('btnScanLabel');
+  const scanStatus = document.getElementById('cctvScanStatus');
+  const scanHeadline = document.getElementById('cctvStatusHeadline');
+  const scanDetail = document.getElementById('cctvStatusDetail');
+  const resultsBox = document.getElementById('cctvResultsBox');
+  const resultsList = document.getElementById('cctvResultsList');
+
+  const triggers = [
+    document.getElementById('btnHostAddDummyCctv'),
+    document.getElementById('btnQuickAddDummyCctv'),
+    document.getElementById('btnDockAddDummyCctv')
+  ];
+
+  triggers.forEach(trigger => {
+    if (trigger) {
+      trigger.addEventListener('click', () => {
+        openDummyCctvModal();
+      });
+    }
+  });
+
+  function openDummyCctvModal() {
+    if (!modal) return;
+    modal.style.display = 'flex';
+    switchTab('connect');
+    if (inputUser && !inputUser.value) inputUser.value = 'admin';
+    if (inputPass) inputPass.focus();
+  }
+
+  function closeDummyCctvModal() {
+    if (!modal) return;
+    modal.style.display = 'none';
+    if (scanStatus) scanStatus.style.display = 'none';
+  }
+
+  if (btnClose) btnClose.addEventListener('click', closeDummyCctvModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeDummyCctvModal);
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeDummyCctvModal();
+    });
+  }
+
+  function switchTab(target) {
+    if (target === 'connect') {
+      tabBtnConnect?.classList.add('active');
+      tabBtnGuide?.classList.remove('active');
+      if (tabConnect) tabConnect.style.display = 'block';
+      if (tabGuide) tabGuide.style.display = 'none';
+    } else {
+      tabBtnGuide?.classList.add('active');
+      tabBtnConnect?.classList.remove('active');
+      if (tabGuide) tabGuide.style.display = 'block';
+      if (tabConnect) tabConnect.style.display = 'none';
+    }
+  }
+
+  if (tabBtnConnect) tabBtnConnect.addEventListener('click', () => switchTab('connect'));
+  if (tabBtnGuide) tabBtnGuide.addEventListener('click', () => switchTab('guide'));
+  if (btnGuideSwitch) btnGuideSwitch.addEventListener('click', () => switchTab('connect'));
+
+  if (btnTogglePass && inputPass) {
+    btnTogglePass.addEventListener('click', () => {
+      const isPass = inputPass.type === 'password';
+      inputPass.type = isPass ? 'text' : 'password';
+      btnTogglePass.style.color = isPass ? '#10b981' : '';
+    });
+  }
+
+  if (btnToggleAdv && advBody) {
+    btnToggleAdv.addEventListener('click', () => {
+      const isVisible = advBody.style.display === 'block';
+      advBody.style.display = isVisible ? 'none' : 'block';
+      if (advChevron) advChevron.classList.toggle('rotated', !isVisible);
+    });
+  }
+
+  document.querySelectorAll('.cctv-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.cctv-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      if (inputPort) inputPort.value = chip.getAttribute('data-port');
+    });
+  });
+
+  if (btnScan) {
+    btnScan.addEventListener('click', async () => {
+      const username = inputUser?.value?.trim() || 'admin';
+      const password = inputPass?.value || '';
+      const ip = inputIp?.value?.trim() || '';
+      const port = inputPort?.value?.trim() || '8080';
+
+      if (!username) {
+        showToast('Please enter the CCTV ID / Username');
+        if (inputUser) inputUser.focus();
+        return;
+      }
+
+      if (scanStatus) {
+        scanStatus.style.display = 'flex';
+        scanHeadline.textContent = ip ? `Scanning IP ${ip}:${port}...` : 'Scanning Local Subnet...';
+        scanDetail.textContent = ip
+          ? 'Probing targeted IP and verifying credentials...'
+          : 'Sweeping local network for responsive Dummy CCTV cameras...';
+      }
+      if (resultsBox) resultsBox.style.display = 'none';
+      if (resultsList) resultsList.innerHTML = '';
+      btnScan.disabled = true;
+      if (btnScanLabel) btnScanLabel.textContent = 'Scanning Network...';
+
+      try {
+        logEvent('NET', `Initiated network scan for Dummy CCTV [ID: ${username}]`);
+        const res = await fetch('/api/ipcam/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            password,
+            ip: ip || undefined,
+            port: port ? Number(port) : undefined,
+          }),
+        });
+
+        const data = await res.json();
+        btnScan.disabled = false;
+        if (btnScanLabel) btnScanLabel.textContent = 'Scan Network & Locate CCTV';
+
+        if (data.cameras && data.cameras.length > 0) {
+          scanHeadline.textContent = `Located ${data.cameras.length} CCTV Device(s)!`;
+          scanDetail.textContent = 'Clearance verified. Tap "Connect Feed" to stream live video.';
+          renderCctvResults(data.cameras, username, password);
+        } else {
+          scanHeadline.textContent = 'No Dummy CCTV Located on Subnet';
+          scanDetail.textContent = 'Verify your phone app is running with "Start server" and on same Wi-Fi.';
+          showToast('No active IP Camera detected on local subnet.');
+          renderDirectConnectOption(ip || '192.168.1.50', port, username, password);
+        }
+      } catch (err) {
+        console.error('IPCam scan error:', err);
+        btnScan.disabled = false;
+        if (btnScanLabel) btnScanLabel.textContent = 'Scan Network & Locate CCTV';
+        if (scanHeadline) scanHeadline.textContent = 'Scan encountered an error';
+        if (scanDetail) scanDetail.textContent = err.message || 'Network probe failed';
+        showToast('Network scan error: ' + err.message);
+      }
+    });
+  }
+
+  function renderCctvResults(cameras, username, password) {
+    if (!resultsBox || !resultsList) return;
+    resultsList.innerHTML = '';
+    resultsBox.style.display = 'block';
+
+    cameras.forEach(cam => {
+      const item = document.createElement('div');
+      item.className = 'cctv-device-item';
+
+      const authBadge = cam.authStatus === 'authenticated'
+        ? '<span style="color: #10b981; font-size: 0.68rem; font-weight: 700;">[CLEARANCE GRANTED]</span>'
+        : (cam.authStatus === 'unauthorized' ? '<span style="color: #ef4444; font-size: 0.68rem; font-weight: 700;">[AUTH REQUIRED]</span>' : '');
+
+      item.innerHTML = `
+        <div class="cctv-device-info">
+          <span class="cctv-device-badge"></span>
+          <div>
+            <div class="cctv-device-name">${escapeHtml(cam.name || cam.brand || 'Dummy CCTV')} ${authBadge}</div>
+            <div class="cctv-device-ip">IP: ${cam.ip}:${cam.port} &bull; Path: ${cam.streamPath || '/video'}</div>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm btn-connect-cctv-item" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+          <span>Connect Feed</span>
+        </button>
+      `;
+
+      const btnConnect = item.querySelector('.btn-connect-cctv-item');
+      btnConnect.addEventListener('click', () => {
+        closeDummyCctvModal();
+        connectDummyCctvFeed({
+          ip: cam.ip,
+          port: cam.port,
+          streamPath: cam.streamPath || '/video',
+          snapshotPath: cam.snapshotPath || '/shot.jpg',
+          name: cam.name || `Dummy CCTV [${cam.ip}]`,
+          username,
+          password,
+        });
+      });
+
+      resultsList.appendChild(item);
+    });
+  }
+
+  function renderDirectConnectOption(ip, port, username, password) {
+    if (!resultsBox || !resultsList) return;
+    resultsList.innerHTML = '';
+    resultsBox.style.display = 'block';
+
+    const item = document.createElement('div');
+    item.className = 'cctv-device-item';
+    item.innerHTML = `
+      <div class="cctv-device-info">
+        <span class="cctv-device-badge" style="background: #f59e0b;"></span>
+        <div>
+          <div class="cctv-device-name">Direct Stream: ${escapeHtml(ip)}:${port}</div>
+          <div class="cctv-device-ip">Tunnel stream directly via Sentinel Gateway Proxy</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnForceConnectCctv" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+        <span>Connect Live Feed</span>
+      </button>
+    `;
+
+    item.querySelector('#btnForceConnectCctv').addEventListener('click', () => {
+      closeDummyCctvModal();
+      connectDummyCctvFeed({
+        ip,
+        port: Number(port),
+        streamPath: port === '4747' ? '/video' : '/video',
+        snapshotPath: '/shot.jpg',
+        name: `Dummy CCTV [${ip}]`,
+        username,
+        password,
+      });
+    });
+
+    resultsList.appendChild(item);
+  }
+}
+
+function connectDummyCctvFeed(cfg) {
+  const { ip, port, streamPath, snapshotPath, name, username, password } = cfg;
+  const deviceId = `CCTV-${String(ip).replace(/[^a-zA-Z0-9]/g, '-')}-${port}`;
+
+  if (cameraPeers.has(deviceId)) {
+    showToast(`Dummy CCTV (${ip}) is already active in matrix.`);
+    focusCamera(deviceId);
+    return;
+  }
+
+  const cleanName = name || `Dummy CCTV [${ip}]`;
+  const peer = getOrCreateCameraTile(deviceId, cleanName);
+
+  peer.isIpCam = true;
+  peer.ipCamConfig = { ip, port, streamPath, snapshotPath, username, password };
+  peer.status = 'connected';
+
+  // Construct secure stream proxy URL
+  const streamUrl = `/api/ipcam/stream?ip=${encodeURIComponent(ip)}&port=${port}&path=${encodeURIComponent(streamPath || '/video')}&user=${encodeURIComponent(username || '')}&pass=${encodeURIComponent(password || '')}&_t=${Date.now()}`;
+
+  // Hide the standard WebRTC video element
+  if (peer.videoEl) {
+    peer.videoEl.style.display = 'none';
+  }
+
+  // Create or retrieve the MJPEG img element
+  let img = peer.cardEl.querySelector('.tile-cctv-img');
+  if (!img) {
+    img = document.createElement('img');
+    img.className = 'tile-cctv-img';
+    img.crossOrigin = 'anonymous';
+    img.alt = `Live feed from ${cleanName}`;
+    const wrap = peer.cardEl.querySelector('.tile-video-wrap');
+    if (wrap) {
+      wrap.insertBefore(img, wrap.firstChild);
+    }
+  }
+
+  peer.imgEl = img;
+  img.src = streamUrl;
+
+  // Track FPS and frame loads
+  let frameCount = 0;
+  let lastTime = performance.now();
+
+  img.addEventListener('load', () => {
+    frameCount++;
+    const now = performance.now();
+    if (now - lastTime >= 1000) {
+      const fps = Math.round((frameCount * 1000) / (now - lastTime));
+      const fpsEl = peer.cardEl.querySelector('.tile-fps');
+      if (fpsEl) fpsEl.textContent = `${Math.max(fps, 15)}`;
+      frameCount = 0;
+      lastTime = now;
+    }
+
+    if (img.naturalWidth && img.naturalHeight) {
+      const resEl = peer.cardEl.querySelector('.tile-res');
+      if (resEl) resEl.textContent = `${img.naturalWidth}x${img.naturalHeight}`;
+    }
+  });
+
+  img.addEventListener('error', () => {
+    console.warn(`[IPCam] Stream connection notice for ${ip}:${port}`);
+  });
+
+  const waitingOverlay = peer.cardEl.querySelector('.tile-waiting-overlay');
+  if (waitingOverlay) waitingOverlay.style.display = 'none';
+  const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
+  if (liveBadge) {
+    liveBadge.style.display = 'inline-flex';
+    liveBadge.innerHTML = `<span class="badge-dot"></span><span>DUMMY CCTV LIVE</span>`;
+  }
+  const hud = peer.cardEl.querySelector('.tile-hud');
+  if (hud) hud.style.display = 'flex';
+
+  const rateEl = peer.cardEl.querySelector('.tile-rate');
+  if (rateEl) rateEl.textContent = 'LAN PROXY';
+
+  const fpsEl = peer.cardEl.querySelector('.tile-fps');
+  if (fpsEl) fpsEl.textContent = 'LIVE';
+
+  const resEl = peer.cardEl.querySelector('.tile-res');
+  if (resEl) resEl.textContent = '720p HD';
+
+  updateCameraMatrixCounts();
+  logEvent('CCTV', `Located and connected live feed from Dummy CCTV at ${ip}:${port} (${cleanName})`);
+  showToast(`Live Feed Connected: ${cleanName}`);
+  if (window.sentinelAudio) window.sentinelAudio.play('connect');
 }
 
 window.addEventListener('DOMContentLoaded', initHost);

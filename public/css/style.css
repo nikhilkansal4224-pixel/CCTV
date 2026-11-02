@@ -2873,6 +2873,496 @@ body {
   animation: pulse-dot 1.2s infinite ease-in-out;
 }
 
+/* ==========================================================================
+   PHONE AS DUMMY CCTV & IP CAMERA INTEGRATION STYLES
+   ========================================================================== */
+
+.cctv-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(4, 4, 6, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.cctv-modal-box {
+  background: rgba(18, 18, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.95), 0 0 40px rgba(16, 185, 129, 0.08);
+  padding: 1.6rem 1.6rem 1.4rem;
+  position: relative;
+  animation: slideUpSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cctv-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  gap: 1rem;
+}
+
+.cctv-modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.cctv-icon-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cctv-modal-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.cctv-modal-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+
+.cctv-modal-close {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 1.4rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  transition: var(--transition-fast);
+}
+
+.cctv-modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.cctv-modal-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  background: rgba(9, 9, 11, 0.7);
+  padding: 0.3rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+}
+
+.cctv-tab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.cctv-tab-btn:hover {
+  color: #ffffff;
+}
+
+.cctv-tab-btn.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.cctv-form-group {
+  margin-bottom: 1.1rem;
+}
+
+.cctv-label {
+  display: block;
+  font-size: 0.73rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.cctv-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cctv-input-icon {
+  position: absolute;
+  left: 0.85rem;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.cctv-input {
+  width: 100%;
+  background: rgba(9, 9, 11, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  padding: 0.65rem 0.9rem 0.65rem 2.45rem;
+  border-radius: 9px;
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  outline: none;
+  transition: var(--transition-fast);
+}
+
+.cctv-input:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.cctv-btn-toggle-pass {
+  position: absolute;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0.2rem;
+  transition: var(--transition-fast);
+}
+
+.cctv-btn-toggle-pass:hover {
+  color: #ffffff;
+}
+
+.cctv-help-text {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  margin-top: 0.3rem;
+}
+
+.cctv-advanced-box {
+  background: rgba(9, 9, 11, 0.5);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+
+.cctv-advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition-fast);
+}
+
+.cctv-advanced-toggle:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+}
+
+.cctv-chevron {
+  font-size: 0.65rem;
+  transition: transform 0.2s ease;
+}
+
+.cctv-chevron.rotated {
+  transform: rotate(180deg);
+}
+
+.cctv-advanced-body {
+  padding: 0.85rem 0.9rem 1rem;
+  border-top: 1px solid var(--border-light);
+  background: rgba(9, 9, 11, 0.3);
+}
+
+.cctv-port-chips {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.cctv-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.cctv-chip:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.cctv-chip.active {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.cctv-scan-status {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  margin-bottom: 1.15rem;
+  animation: fadeIn 0.2s ease-in;
+}
+
+.cctv-radar-mini {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(16, 185, 129, 0.3);
+  border-top-color: #10b981;
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+.cctv-status-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.cctv-status-headline {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.cctv-status-detail {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
+}
+
+.cctv-results-box {
+  margin-bottom: 1.25rem;
+}
+
+.cctv-results-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.cctv-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.cctv-device-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(9, 9, 11, 0.75);
+  border: 1px solid var(--border-medium);
+  border-radius: 9px;
+  padding: 0.65rem 0.85rem;
+  transition: var(--transition-fast);
+}
+
+.cctv-device-item:hover {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.cctv-device-info {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.cctv-device-badge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.cctv-device-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.cctv-device-ip {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.cctv-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-light);
+}
+
+/* Guide Styles */
+.cctv-guide-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  color: #ffffff;
+  line-height: 1.4;
+  margin-bottom: 1.15rem;
+}
+
+.cctv-guide-shield {
+  color: #10b981;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.cctv-guide-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.cctv-os-card {
+  background: rgba(9, 9, 11, 0.65);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 0.95rem 1.1rem;
+}
+
+.cctv-os-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+}
+
+.cctv-os-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.cctv-os-badge.android {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.cctv-os-badge.ios {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.cctv-os-status {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+}
+
+.cctv-app-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 0.55rem;
+}
+
+.cctv-steps-list {
+  padding-left: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.cctv-steps-list li strong {
+  color: #ffffff;
+}
+
+.cctv-steps-list code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  color: #38bdf8;
+}
+
+/* MJPEG Live Stream Image Element inside Camera Tile */
+.tile-cctv-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
 
 
 

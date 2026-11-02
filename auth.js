@@ -64,7 +64,7 @@ function verifyPassword(password, storedHash, salt) {
 
 const db = require('./db');
 
-// Connect to MongoDB asynchronously
+// Connect to Supabase asynchronously
 db.connectDB().catch(err => {
   console.warn('[Auth] Database connection notice:', err.message);
 });
@@ -113,7 +113,7 @@ function saveUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
 }
 
-// User Authentication (MongoDB + local fallback)
+// User Authentication (Supabase + local fallback)
 async function authenticate(username, password) {
   if (!username || !password) return null;
   const user = await db.findUserByUsername(username);
@@ -124,7 +124,7 @@ async function authenticate(username, password) {
     const fallbackUserId = 'USR-' + rawId.replace('user_', '').substring(0, 8).toUpperCase();
     const formattedUserId = user.userId || fallbackUserId;
 
-    // Update lastLoginAt and ensure userId is stored in MongoDB
+    // Update lastLoginAt and ensure userId is stored in Supabase
     db.updateUser(user.username, {
       userId: formattedUserId,
       lastLoginAt: new Date().toISOString(),
@@ -142,7 +142,7 @@ async function authenticate(username, password) {
   return null;
 }
 
-// Register New Operator (MongoDB + local fallback)
+// Register New Operator (Supabase + local fallback)
 async function register(username, password, role = 'Security Operator', displayName = '') {
   if (!username || username.trim().length < 3) {
     throw new Error('Username must be at least 3 characters');

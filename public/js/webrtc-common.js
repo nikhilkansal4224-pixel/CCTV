@@ -185,7 +185,7 @@ class SentinelAudio {
 // Fallback: HTTP Long-Polling (Vercel Serverless where long-lived WebSockets are prohibited)
 class UniversalSignalingChannel {
   constructor({ sessionId, role, deviceId, deviceName }) {
-    this.sessionId = sessionId;
+    this.sessionId = (sessionId || '').trim().toLowerCase();
     this.role = role; // 'host' | 'camera'
     this.deviceId = deviceId || '';
     this.deviceName = deviceName || '';
