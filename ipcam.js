@@ -458,7 +458,7 @@ function proxyStream(req, res) {
       path: target.path,
       method: 'GET',
       headers,
-      timeout: 10000,
+      timeout: 5000,
       rejectUnauthorized: false, // Allow self-signed SSL on local IP cams / DDNS
     },
     (upstreamRes) => {

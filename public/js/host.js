@@ -2593,8 +2593,35 @@ function connectDummyCctvFeed(cfg) {
   peer.imgEl = img;
   img.src = streamUrl;
 
+  const waitingOverlay = peer.cardEl.querySelector('.tile-waiting-overlay');
+  const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
+
+  if (waitingOverlay) {
+    waitingOverlay.style.display = 'flex';
+    waitingOverlay.innerHTML = `
+      <div style="text-align: center; padding: 1.5rem; max-width: 90%;">
+        <div class="spinner-sm" style="margin: 0 auto 0.75rem; width: 28px; height: 28px; border: 3px solid rgba(56, 189, 248, 0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+        <div style="font-size: 0.82rem; font-weight: 700; color: #38bdf8; margin-bottom: 0.25rem;">CONNECTING TO CCTV STREAM</div>
+        <div style="font-size: 0.72rem; color: #94a3b8; font-family: monospace;">Target: ${escapeHtml(ip)}:${port}</div>
+      </div>
+    `;
+  }
+  if (liveBadge) {
+    liveBadge.style.display = 'inline-flex';
+    liveBadge.style.background = 'rgba(56, 189, 248, 0.15)';
+    liveBadge.style.color = '#38bdf8';
+    liveBadge.innerHTML = `<span class="badge-dot" style="background: #38bdf8;"></span><span>CONNECTING...</span>`;
+  }
+
   // Track stream resolution and frame activity
   img.addEventListener('load', () => {
+    if (waitingOverlay) waitingOverlay.style.display = 'none';
+    if (liveBadge) {
+      liveBadge.style.display = 'inline-flex';
+      liveBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+      liveBadge.style.color = '#34d399';
+      liveBadge.innerHTML = `<span class="badge-dot" style="background: #10b981;"></span><span>IP CAM LIVE</span>`;
+    }
     if (img.naturalWidth && img.naturalHeight) {
       const resEl = peer.cardEl.querySelector('.tile-res');
       if (resEl) resEl.textContent = `${img.naturalWidth}x${img.naturalHeight}`;
@@ -2605,15 +2632,46 @@ function connectDummyCctvFeed(cfg) {
 
   img.addEventListener('error', () => {
     console.warn(`[IPCam] Stream connection notice for ${ip}:${port}`);
-  });
+    if (liveBadge) {
+      liveBadge.style.display = 'inline-flex';
+      liveBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+      liveBadge.style.color = '#f87171';
+      liveBadge.innerHTML = `<span class="badge-dot" style="background: #ef4444;"></span><span>UNREACHABLE</span>`;
+    }
+    if (waitingOverlay) {
+      waitingOverlay.style.display = 'flex';
+      waitingOverlay.innerHTML = `
+        <div style="text-align: center; padding: 1.25rem 1rem; max-width: 380px; background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.7);">
+          <div style="font-size: 1.6rem; margin-bottom: 0.35rem;">📡 ⚠️</div>
+          <div style="font-size: 0.82rem; font-weight: 700; color: #f87171; margin-bottom: 0.35rem;">CAMERA UNREACHABLE AT ${escapeHtml(ip)}:${port}</div>
+          <div style="font-size: 0.72rem; color: #cbd5e1; line-height: 1.45; margin-bottom: 0.9rem;">
+            Make sure DroidCam or IP Webcam is running on your phone, you tapped <strong>"Start Server"</strong>, and phone is connected to the same Wi-Fi.
+          </div>
+          <div style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-sm btn-retry-stream" style="font-size: 0.73rem; padding: 0.35rem 0.75rem;">
+              <span>🔄 Retry</span>
+            </button>
+            <button class="btn btn-secondary btn-sm btn-open-modal-qr" style="font-size: 0.73rem; padding: 0.35rem 0.75rem; background: rgba(168, 85, 247, 0.2); border-color: #a855f7; color: #d8b4fe;">
+              <span>📱 Instant QR (No IP)</span>
+            </button>
+          </div>
+        </div>
+      `;
 
-  const waitingOverlay = peer.cardEl.querySelector('.tile-waiting-overlay');
-  if (waitingOverlay) waitingOverlay.style.display = 'none';
-  const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
-  if (liveBadge) {
-    liveBadge.style.display = 'inline-flex';
-    liveBadge.innerHTML = `<span class="badge-dot"></span><span>IP CAM LIVE</span>`;
-  }
+      waitingOverlay.querySelector('.btn-retry-stream')?.addEventListener('click', () => {
+        img.src = `${streamUrl}&_retry=${Date.now()}`;
+      });
+
+      waitingOverlay.querySelector('.btn-open-modal-qr')?.addEventListener('click', () => {
+        const dummyModal = document.getElementById('dummyCctvModal');
+        if (dummyModal) {
+          dummyModal.style.display = 'flex';
+          const tabBtnQr = document.getElementById('tabBtnCctvQr');
+          if (tabBtnQr) tabBtnQr.click();
+        }
+      });
+    }
+  });
   const hud = peer.cardEl.querySelector('.tile-hud');
   if (hud) hud.style.display = 'flex';
 
