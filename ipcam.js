@@ -362,8 +362,8 @@ async function scanNetwork({ username, password, targetIp, port, subnet, timeout
   // Include localhost & loopback
   candidateHosts.unshift('127.0.0.1');
 
-  // Candidate camera ports for broad scan
-  const portsToProbe = port ? [Number(port)] : [8080, 8081, 8088, 4747];
+  // Candidate camera ports for zero-configuration broad auto-scan
+  const portsToProbe = port ? [Number(port)] : [8080, 8081, 8088, 4747, 8000];
 
   // Batch probe candidates with high concurrency
   const BATCH_SIZE = 60;

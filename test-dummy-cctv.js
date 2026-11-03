@@ -96,6 +96,16 @@ async function runTestSuite() {
   assert(scanResult.mode === 'targeted', 'Recognized targeted IP scan mode');
   assert(Array.isArray(scanResult.cameras), 'Returns cameras array');
 
+  // Test 2.2: Zero IP / Port auto-detection mode
+  const autoScanResult = await ipcam.scanNetwork({
+    username: 'admin',
+    password: '',
+    timeoutMs: 50,
+  });
+  assert(autoScanResult.success === true, 'Zero IP/Port auto-scan runs cleanly');
+  assert(autoScanResult.mode === 'auto_scan', 'Runs in zero-config auto_scan mode');
+  assert(autoScanResult.portsScanned.length >= 4, `Probes multiple ports automatically (${autoScanResult.portsScanned.join(', ')})`);
+
   // --- 3. MOCK STREAM GENERATOR & PROXY VALIDATION ---
   console.log('\n[3/4] Testing Stream Proxy & Validation Logic...');
 

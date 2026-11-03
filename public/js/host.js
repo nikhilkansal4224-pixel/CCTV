@@ -2203,23 +2203,70 @@ function initDummyCctvControls() {
     });
   }
 
+  const tabBtnConnect = document.getElementById('tabBtnCctvConnect');
+  const tabBtnQr = document.getElementById('tabBtnCctvQr');
+  const tabBtnGuide = document.getElementById('tabBtnCctvGuide');
+  const tabConnect = document.getElementById('cctvTabConnect');
+  const tabQr = document.getElementById('cctvTabQr');
+  const tabGuide = document.getElementById('cctvTabGuide');
+  const modalQrContainer = document.getElementById('modalQrCodeContainer');
+  const btnModalCopyLink = document.getElementById('btnModalCopyLink');
+  const btnModalOpenWebcam = document.getElementById('btnModalOpenPhoneWebcam');
+
   function switchTab(target) {
     if (target === 'connect') {
       tabBtnConnect?.classList.add('active');
+      tabBtnQr?.classList.remove('active');
       tabBtnGuide?.classList.remove('active');
       if (tabConnect) tabConnect.style.display = 'block';
+      if (tabQr) tabQr.style.display = 'none';
       if (tabGuide) tabGuide.style.display = 'none';
+    } else if (target === 'qr') {
+      tabBtnQr?.classList.add('active');
+      tabBtnConnect?.classList.remove('active');
+      tabBtnGuide?.classList.remove('active');
+      if (tabQr) tabQr.style.display = 'block';
+      if (tabConnect) tabConnect.style.display = 'none';
+      if (tabGuide) tabGuide.style.display = 'none';
+
+      // Load session QR SVG into modal for zero-install instant phone pairing
+      if (modalQrContainer && qrCodeContainer && qrCodeContainer.innerHTML) {
+        modalQrContainer.innerHTML = qrCodeContainer.innerHTML;
+      }
     } else {
       tabBtnGuide?.classList.add('active');
       tabBtnConnect?.classList.remove('active');
+      tabBtnQr?.classList.remove('active');
       if (tabGuide) tabGuide.style.display = 'block';
       if (tabConnect) tabConnect.style.display = 'none';
+      if (tabQr) tabQr.style.display = 'none';
     }
   }
 
   if (tabBtnConnect) tabBtnConnect.addEventListener('click', () => switchTab('connect'));
+  if (tabBtnQr) tabBtnQr.addEventListener('click', () => switchTab('qr'));
   if (tabBtnGuide) tabBtnGuide.addEventListener('click', () => switchTab('guide'));
   if (btnGuideSwitch) btnGuideSwitch.addEventListener('click', () => switchTab('connect'));
+
+  if (btnModalCopyLink) {
+    btnModalCopyLink.addEventListener('click', () => {
+      if (currentSession && currentSession.cameraUrl) {
+        navigator.clipboard.writeText(currentSession.cameraUrl).then(() => {
+          showToast('✓ Mobile CCTV Link copied to clipboard!');
+        }).catch(() => {
+          showToast(currentSession.cameraUrl);
+        });
+      }
+    });
+  }
+
+  if (btnModalOpenWebcam) {
+    btnModalOpenWebcam.addEventListener('click', () => {
+      if (currentSession && currentSession.cameraUrl) {
+        window.open(currentSession.cameraUrl, '_blank');
+      }
+    });
+  }
 
   if (btnTogglePass && inputPass) {
     btnTogglePass.addEventListener('click', () => {
@@ -2265,8 +2312,7 @@ function initDummyCctvControls() {
           badgeHtml = `<span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem;">URL Format</span>`;
         }
       } else if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.0\.0\.1|localhost)/.test(val)) {
-        badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;"><span>📶</span> Local Network (LAN Subnet)</span>`;
-        // Check if port is embedded e.g. 192.168.1.50:8081
+        badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;"><span>📶</span> Local Subnet (LAN)</span>`;
         if (val.includes(':') && !val.includes(']')) {
           const parts = val.split(':');
           if (parts[1] && !isNaN(Number(parts[1]))) {
@@ -2274,7 +2320,7 @@ function initDummyCctvControls() {
           }
         }
       } else {
-        badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;"><span>🌐</span> Remote WAN / Any IP (Cross-Network / Cellular / DDNS)</span>`;
+        badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;"><span>🌐</span> Remote WAN / Any IP</span>`;
         if (val.includes(':') && !val.includes(']')) {
           const parts = val.split(':');
           if (parts[1] && !isNaN(Number(parts[1]))) {
@@ -2295,28 +2341,22 @@ function initDummyCctvControls() {
       const username = inputUser?.value?.trim() || 'admin';
       const password = inputPass?.value || '';
       const ip = inputIp?.value?.trim() || '';
-      const port = inputPort?.value?.trim() || '8080';
-
-      if (!username) {
-        showToast('Please enter the CCTV ID / Username');
-        if (inputUser) inputUser.focus();
-        return;
-      }
+      const port = inputPort?.value?.trim() || '';
 
       if (scanStatus) {
         scanStatus.style.display = 'flex';
-        scanHeadline.textContent = ip ? `Probing Target: ${ip}...` : 'Auto-Scanning Network Interfaces...';
+        scanHeadline.textContent = ip ? `Probing Target: ${ip}...` : 'Auto-Detecting Phone CCTV...';
         scanDetail.textContent = ip
           ? 'Connecting to target address across video streaming ports...'
-          : 'Sweeping subnets in parallel for active IP Webcam & CCTV streams...';
+          : 'Zero setup: sweeping local network interfaces for active camera feeds...';
       }
       if (resultsBox) resultsBox.style.display = 'none';
       if (resultsList) resultsList.innerHTML = '';
       btnScan.disabled = true;
-      if (btnScanLabel) btnScanLabel.textContent = 'Scanning Network...';
+      if (btnScanLabel) btnScanLabel.textContent = 'Auto-Scanning Network...';
 
       try {
-        logEvent('NET', `Initiated network scan for Dummy CCTV [ID: ${username}]`);
+        logEvent('NET', `Auto-scan initiated for CCTV [ID: ${username}]`);
         const res = await fetch('/api/ipcam/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2330,28 +2370,43 @@ function initDummyCctvControls() {
 
         const data = await res.json();
         btnScan.disabled = false;
-        if (btnScanLabel) btnScanLabel.textContent = 'Scan Network & Locate CCTV';
+        if (btnScanLabel) btnScanLabel.textContent = '⚡ Auto-Detect & Connect CCTV Feed';
 
         if (data.cameras && data.cameras.length > 0) {
-          scanHeadline.textContent = `Located ${data.cameras.length} CCTV Device(s)!`;
-          scanDetail.textContent = 'Clearance verified. Tap "Connect Feed" to stream live video.';
-          renderCctvResults(data.cameras, username, password);
+          // If exactly 1 camera is found, automatically connect immediately without user having to enter or click anything!
+          if (data.cameras.length === 1) {
+            const cam = data.cameras[0];
+            closeDummyCctvModal();
+            connectDummyCctvFeed({
+              ip: cam.ip,
+              port: cam.port,
+              streamPath: cam.streamPath || '/video',
+              snapshotPath: cam.snapshotPath || '/shot.jpg',
+              name: cam.name || `Dummy CCTV [${cam.ip}]`,
+              username,
+              password,
+            });
+            showToast(`✓ Auto-Connected to ${cam.brand || cam.name}! Zero IP/port setup needed.`);
+            logEvent('CCTV', `Auto-connected live feed from ${cam.ip}:${cam.port}`);
+          } else {
+            scanHeadline.textContent = `Located ${data.cameras.length} CCTV Device(s)!`;
+            scanDetail.textContent = 'Select camera to stream:';
+            renderCctvResults(data.cameras, username, password);
+          }
         } else {
-          scanHeadline.textContent = ip ? 'Target Host Not Responding to Auto-Probe' : 'No Cameras Found in Auto-Sweep';
-          scanDetail.textContent = ip
-            ? 'The remote address may have ICMP/status probe blocked. You can still direct-connect below:'
-            : 'Ensure camera app is running with "Start server". You can also enter the exact IP or URL below:';
-          showToast(ip ? 'Direct connection available' : 'No active IP Camera detected on local subnet.');
-          renderDirectConnectOption(ip || '192.168.1.50', port, username, password);
+          scanHeadline.textContent = 'No Running Camera App Detected';
+          scanDetail.textContent = 'Make sure "Start server" is tapped in IP Webcam on your phone, or use Instant QR:';
+          showToast('No active camera detected. Tap Instant QR below or start phone server.');
+          renderDirectConnectOption(ip || '192.168.1.50', port || '8080', username, password);
         }
       } catch (err) {
         console.error('IPCam scan error:', err);
         btnScan.disabled = false;
-        if (btnScanLabel) btnScanLabel.textContent = 'Scan Network & Locate CCTV';
+        if (btnScanLabel) btnScanLabel.textContent = '⚡ Auto-Detect & Connect CCTV Feed';
         if (scanHeadline) scanHeadline.textContent = 'Scan encountered an error';
         if (scanDetail) scanDetail.textContent = err.message || 'Network probe failed';
         showToast('Network scan error: ' + err.message);
-        renderDirectConnectOption(ip || '192.168.1.50', port, username, password);
+        renderDirectConnectOption(ip || '192.168.1.50', port || '8080', username, password);
       }
     });
   }
@@ -2468,6 +2523,29 @@ function initDummyCctvControls() {
     });
 
     resultsList.appendChild(yoloItem);
+
+    // Also add shortcut to Instant QR tab (Zero app, zero IP, zero port)
+    const qrItem = document.createElement('div');
+    qrItem.className = 'cctv-device-item';
+    qrItem.style.marginTop = '0.5rem';
+    qrItem.innerHTML = `
+      <div class="cctv-device-info">
+        <span class="cctv-device-badge" style="background: #a855f7;"></span>
+        <div>
+          <div class="cctv-device-name">📱 Instant Mobile QR Pairing (Zero App / No IP / No Port)</div>
+          <div class="cctv-device-ip">Just point phone camera at QR code — streams directly in browser!</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnSwitchToQrTab" style="padding: 0.35rem 0.75rem; font-size: 0.75rem; background: #a855f7; border-color: #a855f7;">
+        <span>View QR Code</span>
+      </button>
+    `;
+
+    qrItem.querySelector('#btnSwitchToQrTab').addEventListener('click', () => {
+      switchTab('qr');
+    });
+
+    resultsList.appendChild(qrItem);
   }
 }
 
