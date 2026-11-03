@@ -97,39 +97,14 @@ function logEvent(tag, message) {
   eventLogContainer.scrollTop = eventLogContainer.scrollHeight;
 }
 
-async function checkAuthAndProfile() {
-  try {
-    const res = await fetch('/api/auth/me');
-    if (!res.ok) {
-      window.location.href = '/login.html?returnTo=' + encodeURIComponent(window.location.pathname);
-      return false;
-    }
-    const data = await res.json();
-    if (data.user) {
-      currentUserId = data.user.userId || ('USR-' + (data.user.id || 'ADMIN').replace('user_', '').substring(0, 8).toUpperCase());
-      const userIdChip = document.getElementById('userIdChip');
-      if (userIdChip) {
-        userIdChip.textContent = currentUserId;
-      }
-      if (userNameEl) userNameEl.textContent = data.user.displayName || data.user.username;
-      if (userRoleEl) userRoleEl.textContent = data.user.role || 'Operator';
-      if (userAvatarEl) {
-        const initial = (data.user.displayName || data.user.username || 'A')[0].toUpperCase();
-        userAvatarEl.textContent = initial;
-      }
-      return true;
-    }
-  } catch (err) {
-    console.warn('Auth check error:', err);
-  }
-  window.location.href = '/login.html';
-  return false;
-}
-
-// Initialize Dashboard
+// Initialize Dashboard (Direct open access, zero login required)
 async function initHost() {
-  const isAuthed = await checkAuthAndProfile();
-  if (!isAuthed) return;
+  currentUserId = 'USR-OPERATOR';
+  const userIdChip = document.getElementById('userIdChip');
+  if (userIdChip) userIdChip.textContent = 'ONLINE';
+  if (userNameEl) userNameEl.textContent = 'Sentinel Station';
+  if (userRoleEl) userRoleEl.textContent = 'Direct Access';
+
   await loadNetworkInfo();
   await createNewSession();
   setupEventListeners();
@@ -1427,17 +1402,6 @@ function setupEventListeners() {
     });
   }
 
-  // Sign out button
-  if (btnLogout) {
-    btnLogout.addEventListener('click', async () => {
-      if (confirm('Are you sure you want to sign out of the Sentinel Gateway?')) {
-        try {
-          await fetch('/api/auth/logout', { method: 'POST' });
-        } catch (e) {}
-        window.location.href = '/login.html';
-      }
-    });
-  }
 
   // Master Sleep Timer Trigger Click (QR widget and Viewport button)
   const toggleMasterSleepMenu = (e) => {

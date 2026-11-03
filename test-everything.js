@@ -22,81 +22,31 @@ async function runTestSuite() {
     }
   }
 
-  // --- 1. AUTHENTICATION & SECURITY TESTS ---
-  console.log('[1/4] Testing Authentication & Security Gateways...');
+  // --- 1. DIRECT ACCESS & OPEN GATEWAY TESTS ---
+  console.log('[1/4] Testing Direct Access & Open Gateways (Zero Login Required)...');
 
-  // Test 1.1: Unauthenticated request to / returns 302 redirect
+  // Test 1.1: Root / serves dashboard directly (200 OK, zero login redirect)
   const rootRes = await fetch(`${BASE_URL}/`, { redirect: 'manual' });
-  assert(rootRes.status === 302, 'Unauthenticated root access returns 302 redirect');
-  assert(rootRes.headers.get('location')?.includes('/login.html'), 'Redirect target is /login.html');
+  assert(rootRes.status === 200, 'Root access directly serves dashboard with 200 OK (no login required)');
 
-  // Test 1.2: Unauthenticated request to protected API returns 401
-  const unauthApiRes = await fetch(`${BASE_URL}/api/sessions/create`, { method: 'POST' });
-  assert(unauthApiRes.status === 401, 'POST /api/sessions/create without auth returns 401');
+  // Test 1.2: Legacy login.html redirects cleanly to /
+  const loginPageRes = await fetch(`${BASE_URL}/login.html`, { redirect: 'manual' });
+  assert(loginPageRes.status === 302, 'Legacy /login.html redirects directly to /');
 
-  // Test 1.3: Login with invalid password fails
-  const badLoginRes = await fetch(`${BASE_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'wrongpassword' }),
-  });
-  assert(badLoginRes.status === 401, 'Login with invalid password rejected with 401');
-
-  // Test 1.4: Login with valid admin credentials succeeds
-  const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'password123', remember: true }),
-  });
-  const loginData = await loginRes.json();
-  assert(loginRes.status === 200 && loginData.success, 'Login with admin credentials succeeds');
-  authToken = loginData.token;
-  authCookie = loginRes.headers.get('set-cookie');
-  assert(!!authToken && !!authCookie, 'Authentication token and cookie issued');
-
-  // Test 1.5: GET /api/auth/me returns operator details
-  const meRes = await fetch(`${BASE_URL}/api/auth/me`, {
-    headers: { Cookie: authCookie },
-  });
+  // Test 1.3: GET /api/auth/me returns operator details without cookies
+  const meRes = await fetch(`${BASE_URL}/api/auth/me`);
   const meData = await meRes.json();
-  assert(meRes.status === 200 && meData.authenticated && meData.user.username === 'admin', '/api/auth/me identifies operator');
-
-  // Test 1.6: Register new operator
-  const testOperator = `test_op_${Date.now().toString().slice(-4)}`;
-  const regRes = await fetch(`${BASE_URL}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: testOperator,
-      password: 'securepassword123',
-      role: 'Surveillance Officer',
-      displayName: 'Officer Test',
-    }),
-  });
-  const regData = await regRes.json();
-  assert(regRes.status === 201 && regData.success && regData.user.username === testOperator, 'Operator registration succeeds');
-
-  // Test 1.7: Duplicate registration fails
-  const dupRegRes = await fetch(`${BASE_URL}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: testOperator,
-      password: 'securepassword123',
-    }),
-  });
-  assert(dupRegRes.status === 400, 'Duplicate username registration rejected with 400');
+  assert(meRes.status === 200 && meData.authenticated, '/api/auth/me returns operator status directly');
 
   // --- 2. SESSION & QR GENERATION TESTS ---
   console.log('\n[2/4] Testing Session Creation & QR Generation...');
 
-  // Test 2.1: Create session with authenticated cookie
+  // Test 2.1: Create session with open access (zero login required)
   const sessionRes = await fetch(`${BASE_URL}/api/sessions/create?host=127.0.0.1&protocol=http`, {
     method: 'POST',
-    headers: { Cookie: authCookie },
   });
   const sessionData = await sessionRes.json();
-  assert(sessionRes.status === 200 && !!sessionData.sessionId, 'Session generated successfully');
+  assert(sessionRes.status === 200 && !!sessionData.sessionId, 'Session generated successfully without login');
   const sessionId = sessionData.sessionId;
 
   // Test 2.2: Retrieve session details
@@ -236,7 +186,6 @@ async function runTestSuite() {
   // Test 4.2: Isolated Camera Red Cross Disconnect (Camera leaves voluntarily)
   const isoSessionRes = await fetch(`${BASE_URL}/api/sessions/create?host=127.0.0.1&protocol=http`, {
     method: 'POST',
-    headers: { Cookie: authCookie },
   });
   const isoSessionData = await isoSessionRes.json();
   const isoSessionId = isoSessionData.sessionId;

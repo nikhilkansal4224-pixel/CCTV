@@ -9,7 +9,6 @@ const cookieParser = require('cookie-parser');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const selfsigned = require('selfsigned');
-const auth = require('./auth');
 const db = require('./db');
 const ipcam = require('./ipcam');
 
@@ -20,8 +19,8 @@ app.use(cookieParser());
 // Public directory resolution supporting Vercel serverless bundles and local development
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
 
-// Protected Host Dashboard Route (requires authentication)
-app.get(['/', '/index.html'], auth.requireAuth, (req, res) => {
+// Host Dashboard Route (Direct Access, Zero Login Required)
+app.get(['/', '/index.html'], (req, res) => {
   const primaryPath = path.join(PUBLIC_DIR, 'index.html');
   if (fs.existsSync(primaryPath)) {
     return res.sendFile(primaryPath);
@@ -29,7 +28,12 @@ app.get(['/', '/index.html'], auth.requireAuth, (req, res) => {
   return res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Serve public static assets (login.html, camera.html, css, js)
+// Legacy /login.html redirects directly to dashboard
+app.get('/login.html', (req, res) => {
+  res.redirect('/');
+});
+
+// Serve public static assets (camera.html, css, js)
 app.use(express.static(PUBLIC_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -433,66 +437,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- Authentication Endpoints ---
-
-// Operator Login (Supabase + Local Fallback)
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { username, password, remember } = req.body;
-    const user = await auth.authenticate(username, password);
-
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid operator credentials' });
-    }
-
-    // 7 days if remember, otherwise 24 hours
-    const maxAge = remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-    const token = auth.generateToken(user, maxAge);
-
-    res.cookie('sentinel_token', token, {
-      httpOnly: true,
-      secure: req.secure || req.protocol === 'https',
-      sameSite: 'lax',
-      maxAge,
-      path: '/',
-    });
-
-    res.json({
-      success: true,
-      user,
-      token,
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Authentication processing error' });
-  }
-});
-
-// Operator Registration (Supabase + Local Fallback)
-app.post('/api/auth/register', async (req, res) => {
-  const { username, password, role, displayName } = req.body;
-  try {
-    const user = await auth.register(username, password, role, displayName);
-    const maxAge = 24 * 60 * 60 * 1000;
-    const token = auth.generateToken(user, maxAge);
-
-    res.cookie('sentinel_token', token, {
-      httpOnly: true,
-      secure: req.secure || req.protocol === 'https',
-      sameSite: 'lax',
-      maxAge,
-      path: '/',
-    });
-
-    res.status(201).json({
-      success: true,
-      user,
-      token,
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // Database & Persistence Health Status
 app.get('/api/db/status', async (req, res) => {
   try {
@@ -501,20 +445,23 @@ app.get('/api/db/status', async (req, res) => {
   res.json(require('./db').getStatus());
 });
 
-// Operator Logout
-app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('sentinel_token', { path: '/' });
-  res.json({ success: true, message: 'Logged out successfully' });
+// Current Operator Info (Open Access, Zero Login Required)
+app.get('/api/auth/me', (req, res) => {
+  res.json({
+    authenticated: true,
+    user: {
+      username: 'Operator',
+      displayName: 'Surveillance Operator',
+      role: 'Chief Operator',
+      userId: 'USR-OPERATOR',
+    },
+  });
 });
 
-// Current Authenticated Operator Info
-app.get('/api/auth/me', auth.optionalAuth, (req, res) => {
-  if (req.user) {
-    res.json({ authenticated: true, user: req.user });
-  } else {
-    res.status(401).json({ authenticated: false, user: null });
-  }
-});
+// Backward-compatible mock auth handlers (no-op)
+app.post('/api/auth/login', (req, res) => res.json({ success: true, message: 'Login bypassed' }));
+app.post('/api/auth/register', (req, res) => res.status(201).json({ success: true, message: 'Open access enabled' }));
+app.post('/api/auth/logout', (req, res) => res.json({ success: true, message: 'Logged out' }));
 
 // --- REST Endpoints ---
 
@@ -545,17 +492,14 @@ app.get('/api/network-info', (req, res) => {
   });
 });
 
-// Create or retrieve active session for authenticated operator (multi-device sync)
-app.post('/api/sessions/create', auth.requireAuth, async (req, res) => {
-  const user = req.user;
+// Create or retrieve active session (Open Access, Zero Login Required)
+app.post('/api/sessions/create', async (req, res) => {
   const forceNew = req.query.forceNew === 'true';
 
   let session = null;
-  // If not forcing a new session, check for an existing active session for this user
-  if (!forceNew && user && (user.sub || user.id)) {
-    const userIdentifier = user.sub || user.id;
+  if (!forceNew) {
     for (const s of sessions.values()) {
-      if (s.userId === userIdentifier && s.status !== 'ended' && s.expiresAt > Date.now()) {
+      if (s.status !== 'ended' && s.expiresAt > Date.now()) {
         session = s;
         break;
       }
@@ -563,22 +507,16 @@ app.post('/api/sessions/create', auth.requireAuth, async (req, res) => {
   }
 
   if (!session) {
-    const userIdentifier = user ? (user.sub || user.id) : null;
-    session = createSession(userIdentifier, user ? user.username : 'Operator');
-    if (user && user.username) {
-      const dbMod = require('./db');
-      dbMod.updateUser(user.username, { activeSessionId: session.id }).catch(() => {});
-    }
+    session = createSession('operator', 'Operator');
   }
 
   const baseUrl = buildBaseUrl(req, req.query.host, req.query.protocol);
   const cameraUrl = `${baseUrl}/camera.html?session=${session.id}`;
   const preferProtocol = req.query.protocol || (req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http');
-  const userIdVal = user.userId || ('USR-' + (user.sub || user.id || 'ADMIN').replace('user_', '').substring(0, 8).toUpperCase());
 
   res.json({
     sessionId: session.id,
-    userId: userIdVal,
+    userId: 'USR-OPERATOR',
     createdAt: session.createdAt,
     expiresAt: session.expiresAt,
     ttlSeconds: Math.floor(SESSION_TTL_MS / 1000),
@@ -586,12 +524,12 @@ app.post('/api/sessions/create', auth.requireAuth, async (req, res) => {
     status: session.status,
     host: req.query.host || getLocalIp(req),
     protocol: preferProtocol,
-    operator: req.user.username,
+    operator: 'Operator',
   });
 });
 
 // Retrieve current or latest active session for fast reconnection
-app.get('/api/sessions/active/latest', auth.optionalAuth, (req, res) => {
+app.get('/api/sessions/active/latest', (req, res) => {
   const session = getSession('active', req);
   if (!session) {
     return res.status(404).json({ error: 'No active session found' });
@@ -607,7 +545,7 @@ app.get('/api/sessions/active/latest', auth.optionalAuth, (req, res) => {
 });
 
 // Get session details
-app.get('/api/sessions/:id', auth.optionalAuth, (req, res) => {
+app.get('/api/sessions/:id', (req, res) => {
   const session = getSession(req.params.id, req);
   if (!session) {
     return res.status(404).json({ error: 'Session not found or expired' });
@@ -644,7 +582,7 @@ app.get('/api/sessions/:id', auth.optionalAuth, (req, res) => {
 });
 
 // Render QR code image as DataURL or SVG
-app.get('/api/sessions/:id/qr', auth.optionalAuth, async (req, res) => {
+app.get('/api/sessions/:id/qr', async (req, res) => {
   const session = getSession(req.params.id, req);
   if (!session) {
     return res.status(404).send('Session expired or not found');
@@ -670,7 +608,7 @@ app.get('/api/sessions/:id/qr', auth.optionalAuth, async (req, res) => {
 });
 
 // Explicitly terminate session
-app.post('/api/sessions/:id/end', auth.optionalAuth, (req, res) => {
+app.post('/api/sessions/:id/end', (req, res) => {
   const session = getSession(req.params.id, req);
   if (session) {
     session.status = 'ended';
@@ -693,7 +631,7 @@ app.post('/api/sessions/:id/end', auth.optionalAuth, (req, res) => {
 });
 
 // Explicitly disconnect a single camera device (keeps session and other cameras alive)
-app.post('/api/sessions/:id/cameras/:deviceId/end', auth.optionalAuth, (req, res) => {
+app.post('/api/sessions/:id/cameras/:deviceId/end', (req, res) => {
   const session = getSession(req.params.id, req);
   if (session && session.cameras && session.cameras.has(req.params.deviceId)) {
     const cam = session.cameras.get(req.params.deviceId);
@@ -785,7 +723,7 @@ app.get('/api/signaling/poll', (req, res) => {
 });
 
 // Extend active session duration (+10 minutes)
-app.post('/api/sessions/:id/extend', auth.optionalAuth, (req, res) => {
+app.post('/api/sessions/:id/extend', (req, res) => {
   const session = getSession(req.params.id, req);
   if (!session || session.status === 'ended') {
     return res.status(404).json({ error: 'Session not found or already ended' });
@@ -823,7 +761,7 @@ app.post('/api/sessions/:id/extend', auth.optionalAuth, (req, res) => {
 // Configure Sleep Timer:
 // target: 'all' (Master Sleep Timer) or specific deviceId (e.g. 'CAM-XXXX')
 // minutes: 0 / null (turn off) or positive number (e.g. 5, 15, 30, 60, 120)
-app.post('/api/sessions/:id/sleep-timer', auth.optionalAuth, (req, res) => {
+app.post('/api/sessions/:id/sleep-timer', (req, res) => {
   const session = getSession(req.params.id, req);
   if (!session || session.status === 'ended') {
     return res.status(404).json({ error: 'Session not found or already ended' });
@@ -910,7 +848,7 @@ app.post('/api/sessions/:id/sleep-timer', auth.optionalAuth, (req, res) => {
 });
 
 // --- Phone as Dummy CCTV & IP Camera Integration Endpoints ---
-app.post('/api/ipcam/scan', auth.optionalAuth, async (req, res) => {
+app.post('/api/ipcam/scan', async (req, res) => {
   try {
     const { username, password, ip, port, subnet } = req.body || {};
     const result = await ipcam.scanNetwork({
