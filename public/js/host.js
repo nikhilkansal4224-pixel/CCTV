@@ -1,13 +1,5 @@
 // SENTINEL // Host Monitor Script (Multi-Camera Matrix Gateway)
 
-const showToast = (msg, duration) => {
-  if (typeof window.showToast === 'function') {
-    window.showToast(msg, duration);
-  } else {
-    console.log('[Toast]', msg);
-  }
-};
-
 let currentSessionId = null;
 let currentSession = null;
 let sessionExpiresAt = null;
