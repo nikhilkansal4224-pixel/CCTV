@@ -163,10 +163,12 @@ function getLocalSubnets() {
 /**
  * Fast TCP probe to check if a specific port is open on a host
  */
-function probeTcpPort(host, port, timeoutMs = 350) {
+function probeTcpPort(host, port, timeoutMs = 300) {
   return new Promise((resolve) => {
     let responded = false;
     const socket = new net.Socket();
+    socket.setNoDelay(true);
+    socket.unref();
 
     const finish = (isOpen) => {
       if (!responded) {

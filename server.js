@@ -33,9 +33,25 @@ app.get('/login.html', (req, res) => {
   res.redirect('/');
 });
 
-// Serve public static assets (camera.html, css, js)
-app.use(express.static(PUBLIC_DIR));
-app.use(express.static(path.join(__dirname, 'public')));
+// High-performance static assets with browser caching
+const staticOptions = {
+  maxAge: '2h',
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.onnx')) {
+      // 12MB ONNX model: Cache immutable for 1 year so browsers load it instantly from disk cache
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'public, max-age=7200');
+    } else if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+};
+
+app.use(express.static(PUBLIC_DIR, staticOptions));
+app.use(express.static(path.join(__dirname, 'public'), staticOptions));
 
 // Port configuration
 const HTTP_PORT = process.env.PORT || 3000;
@@ -581,7 +597,7 @@ app.get('/api/sessions/:id', (req, res) => {
   });
 });
 
-// Render QR code image as DataURL or SVG
+// Render QR code image as DataURL or SVG (Cached in memory for instant delivery)
 app.get('/api/sessions/:id/qr', async (req, res) => {
   const session = getSession(req.params.id, req);
   if (!session) {
@@ -590,6 +606,12 @@ app.get('/api/sessions/:id/qr', async (req, res) => {
 
   const baseUrl = buildBaseUrl(req, req.query.host, req.query.protocol);
   const cameraUrl = `${baseUrl}/camera.html?session=${session.id}`;
+
+  if (session.cachedQrSvg && session.cachedQrUrl === cameraUrl) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    return res.send(session.cachedQrSvg);
+  }
 
   try {
     const qrSvg = await QRCode.toString(cameraUrl, {
@@ -600,7 +622,10 @@ app.get('/api/sessions/:id/qr', async (req, res) => {
         light: '#09090b',
       },
     });
+    session.cachedQrSvg = qrSvg;
+    session.cachedQrUrl = cameraUrl;
     res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=60');
     res.send(qrSvg);
   } catch (err) {
     res.status(500).send('Error generating QR code');

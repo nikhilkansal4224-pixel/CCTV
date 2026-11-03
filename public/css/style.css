@@ -2367,6 +2367,9 @@ body {
   height: 100%;
   object-fit: contain;
   background: #000000;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
 /* Connecting/Pairing Overlay on Tile */
@@ -2842,6 +2845,8 @@ body {
   height: 100%;
   pointer-events: none;
   z-index: 6;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .tile-entity-pill {

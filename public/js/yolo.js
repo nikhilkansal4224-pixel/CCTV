@@ -20,17 +20,19 @@ class YoloV8Detector {
     this.session = null;
     this.loading = false;
     this.inputSize = 640;
+    this.channelSize = this.inputSize * this.inputSize;
+    this.floatData = new Float32Array(3 * this.channelSize); // Reusable pre-allocated buffer
     this.offscreenCanvas = document.createElement('canvas');
     this.offscreenCanvas.width = this.inputSize;
     this.offscreenCanvas.height = this.inputSize;
-    this.ctx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true });
+    this.ctx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true, alpha: false });
   }
 
   async load() {
     if (this.session) return this.session;
     if (this.loading) {
       while (this.loading) {
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 60));
       }
       return this.session;
     }
@@ -42,13 +44,19 @@ class YoloV8Detector {
 
     this.loading = true;
     try {
-      // Configure ONNX Runtime Web options
+      // Configure ONNX Runtime Web options with WebGPU + WASM SIMD
       ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 4, 4);
       ort.env.wasm.simd = true;
 
-      console.log(`[YOLOv8] Initializing Ultralytics YOLOv8 session from ${this.modelPath}...`);
+      const executionProviders = [];
+      if (typeof navigator !== 'undefined' && navigator.gpu) {
+        executionProviders.push('webgpu');
+      }
+      executionProviders.push('wasm');
+
+      console.log(`[YOLOv8] Initializing Ultralytics YOLOv8 session (${executionProviders.join(', ')})...`);
       this.session = await ort.InferenceSession.create(this.modelPath, {
-        executionProviders: ['wasm'],
+        executionProviders,
         graphOptimizationLevel: 'all',
       });
       console.log('[YOLOv8] Session ready. Neural network loaded.');
@@ -62,25 +70,24 @@ class YoloV8Detector {
   }
 
   /**
-   * Preprocess video or image element into Float32Array [1, 3, 640, 640]
+   * Preprocess video or image element into Float32Array [1, 3, 640, 640] with ZERO memory churn
    */
   preprocess(media) {
     this.ctx.drawImage(media, 0, 0, this.inputSize, this.inputSize);
     const imgData = this.ctx.getImageData(0, 0, this.inputSize, this.inputSize);
-    const { data } = imgData;
+    const data = imgData.data;
 
-    const floatData = new Float32Array(3 * this.inputSize * this.inputSize);
-    const channelSize = this.inputSize * this.inputSize;
+    const floatData = this.floatData;
+    const channelSize = this.channelSize;
+    const ch2 = channelSize * 2;
+    const inv255 = 0.00392156862745098; // 1 / 255.0
 
-    // Convert RGBA [0..255] to Planar RGB [0.0..1.0] (CHW format)
+    // High-speed planar RGB conversion without allocating memory in hot loop
     for (let i = 0; i < channelSize; i++) {
-      const r = data[i * 4] / 255.0;
-      const g = data[i * 4 + 1] / 255.0;
-      const b = data[i * 4 + 2] / 255.0;
-
-      floatData[i] = r;                          // R channel
-      floatData[channelSize + i] = g;            // G channel
-      floatData[2 * channelSize + i] = b;        // B channel
+      const idx = i * 4;
+      floatData[i] = data[idx] * inv255;
+      floatData[channelSize + i] = data[idx + 1] * inv255;
+      floatData[ch2 + i] = data[idx + 2] * inv255;
     }
 
     return floatData;
