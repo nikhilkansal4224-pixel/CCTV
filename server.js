@@ -35,20 +35,24 @@ app.get('/login.html', (req, res) => {
 
 // High-performance static assets with browser caching
 const staticOptions = {
-  maxAge: '2h',
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.onnx')) {
       // 12MB ONNX model: Cache immutable for 1 year so browsers load it instantly from disk cache
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
-      res.setHeader('Cache-Control', 'public, max-age=7200');
-    } else if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'no-cache');
+    } else {
+      // For all JS, CSS, and HTML, require revalidation so browser reloads get the freshest code immediately
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     }
   },
 };
+
+// Silence harmless missing source map requests from browser devtools (e.g. coco-ssd.min.js.map)
+app.get(/\.map$/, (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send('{"version":3,"sources":[],"mappings":""}');
+});
 
 app.use(express.static(PUBLIC_DIR, staticOptions));
 app.use(express.static(path.join(__dirname, 'public'), staticOptions));
