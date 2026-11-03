@@ -1057,20 +1057,45 @@ async function handleRemoteOffer(deviceId, sdp) {
   };
 
   pc.ontrack = (event) => {
-    console.log(`[Host] Received video track for [${deviceId}]:`, event.streams[0]);
+    console.log(`[Host] Received live video track for [${deviceId}]:`, event.streams[0]);
     peer.stream = event.streams[0];
     peer.videoEl.srcObject = peer.stream;
+    peer.videoEl.style.display = 'block';
+    if (peer.imgEl) peer.imgEl.style.display = 'none';
+    peer.videoEl.muted = true;
+    peer.videoEl.playsInline = true;
+    peer.videoEl.autoplay = true;
+
+    // Trigger video playback immediately to satisfy browser autoplay requirements
+    const playPromise = peer.videoEl.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((err) => {
+        console.warn(`[Host] Autoplay deferred for [${deviceId}], awaiting interaction:`, err);
+      });
+    }
+
     peer.status = 'live';
 
-    // Hide waiting overlay, show live badge and hud
+    // Hide waiting overlay, show live badge and telemetry hud
     const waitOverlay = peer.cardEl.querySelector('.tile-waiting-overlay');
     if (waitOverlay) waitOverlay.style.display = 'none';
 
     const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
-    if (liveBadge) liveBadge.style.display = 'flex';
+    if (liveBadge) {
+      liveBadge.style.display = 'inline-flex';
+      liveBadge.innerHTML = `<span class="badge-dot"></span><span>REC LIVE</span>`;
+    }
 
     const hudEl = peer.cardEl.querySelector('.tile-hud');
     if (hudEl) hudEl.style.display = 'flex';
+
+    peer.videoEl.addEventListener('loadedmetadata', () => {
+      const resEl = peer.cardEl.querySelector('.tile-res');
+      if (resEl && peer.videoEl.videoWidth) {
+        resEl.textContent = `${peer.videoEl.videoWidth}x${peer.videoEl.videoHeight}`;
+      }
+      peer.videoEl.play().catch(() => {});
+    });
 
     updateCameraMatrixCounts();
     showToast(`Live feed active: ${peer.deviceName} [${deviceId}]`);
@@ -1735,13 +1760,22 @@ async function addCurrentDeviceCameraToMatrix() {
     peer.stream = stream;
     peer.videoEl.srcObject = stream;
     peer.videoEl.muted = true; // Always muted locally to prevent acoustic feedback howl
+    peer.videoEl.playsInline = true;
+    peer.videoEl.autoplay = true;
+    peer.videoEl.style.display = 'block';
+    if (peer.imgEl) peer.imgEl.style.display = 'none';
     peer.isMuted = true;
-    peer.status = 'connected';
+    peer.status = 'live';
+
+    peer.videoEl.play().catch(e => console.warn('Local camera play error:', e));
 
     const waitingOverlay = peer.cardEl.querySelector('.tile-waiting-overlay');
     if (waitingOverlay) waitingOverlay.style.display = 'none';
     const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
-    if (liveBadge) liveBadge.style.display = 'inline-flex';
+    if (liveBadge) {
+      liveBadge.style.display = 'inline-flex';
+      liveBadge.innerHTML = `<span class="badge-dot"></span><span>LOCAL LIVE</span>`;
+    }
     const hud = peer.cardEl.querySelector('.tile-hud');
     if (hud) hud.style.display = 'flex';
 
@@ -1751,7 +1785,8 @@ async function addCurrentDeviceCameraToMatrix() {
       const fpsEl = peer.cardEl.querySelector('.tile-fps');
       if (fpsEl) fpsEl.textContent = '30';
       const rateEl = peer.cardEl.querySelector('.tile-rate');
-      if (rateEl) rateEl.textContent = 'DIRECT';
+      if (rateEl) rateEl.textContent = 'HARDWARE';
+      peer.videoEl.play().catch(() => {});
     }, { once: true });
 
     updateCameraMatrixCounts();
@@ -2109,17 +2144,17 @@ function connectDummyCctvFeed(cfg) {
     return;
   }
 
-  const cleanName = name || `Dummy CCTV [${ip}]`;
+  const cleanName = name || `IP Camera [${ip}]`;
   const peer = getOrCreateCameraTile(deviceId, cleanName);
 
   peer.isIpCam = true;
   peer.ipCamConfig = { ip, port, streamPath, snapshotPath, username, password };
-  peer.status = 'connected';
+  peer.status = 'live';
 
   // Construct secure stream proxy URL
   const streamUrl = `/api/ipcam/stream?ip=${encodeURIComponent(ip)}&port=${port}&path=${encodeURIComponent(streamPath || '/video')}&user=${encodeURIComponent(username || '')}&pass=${encodeURIComponent(password || '')}&_t=${Date.now()}`;
 
-  // Hide the standard WebRTC video element
+  // Hide the standard WebRTC video element when active as IP camera
   if (peer.videoEl) {
     peer.videoEl.style.display = 'none';
   }
@@ -2130,35 +2165,25 @@ function connectDummyCctvFeed(cfg) {
     img = document.createElement('img');
     img.className = 'tile-cctv-img';
     img.crossOrigin = 'anonymous';
-    img.alt = `Live feed from ${cleanName}`;
+    img.alt = `Live camera feed from ${cleanName}`;
     const wrap = peer.cardEl.querySelector('.tile-video-wrap');
     if (wrap) {
       wrap.insertBefore(img, wrap.firstChild);
     }
   }
 
+  img.style.display = 'block';
   peer.imgEl = img;
   img.src = streamUrl;
 
-  // Track FPS and frame loads
-  let frameCount = 0;
-  let lastTime = performance.now();
-
+  // Track stream resolution and frame activity
   img.addEventListener('load', () => {
-    frameCount++;
-    const now = performance.now();
-    if (now - lastTime >= 1000) {
-      const fps = Math.round((frameCount * 1000) / (now - lastTime));
-      const fpsEl = peer.cardEl.querySelector('.tile-fps');
-      if (fpsEl) fpsEl.textContent = `${Math.max(fps, 15)}`;
-      frameCount = 0;
-      lastTime = now;
-    }
-
     if (img.naturalWidth && img.naturalHeight) {
       const resEl = peer.cardEl.querySelector('.tile-res');
       if (resEl) resEl.textContent = `${img.naturalWidth}x${img.naturalHeight}`;
     }
+    const fpsEl = peer.cardEl.querySelector('.tile-fps');
+    if (fpsEl) fpsEl.textContent = '30';
   });
 
   img.addEventListener('error', () => {
@@ -2170,22 +2195,22 @@ function connectDummyCctvFeed(cfg) {
   const liveBadge = peer.cardEl.querySelector('.tile-live-badge');
   if (liveBadge) {
     liveBadge.style.display = 'inline-flex';
-    liveBadge.innerHTML = `<span class="badge-dot"></span><span>DUMMY CCTV LIVE</span>`;
+    liveBadge.innerHTML = `<span class="badge-dot"></span><span>IP CAM LIVE</span>`;
   }
   const hud = peer.cardEl.querySelector('.tile-hud');
   if (hud) hud.style.display = 'flex';
 
   const rateEl = peer.cardEl.querySelector('.tile-rate');
-  if (rateEl) rateEl.textContent = 'LAN PROXY';
+  if (rateEl) rateEl.textContent = 'STREAM';
 
   const fpsEl = peer.cardEl.querySelector('.tile-fps');
   if (fpsEl) fpsEl.textContent = 'LIVE';
 
   const resEl = peer.cardEl.querySelector('.tile-res');
-  if (resEl) resEl.textContent = '720p HD';
+  if (resEl) resEl.textContent = 'HD 720p';
 
   updateCameraMatrixCounts();
-  logEvent('CCTV', `Located and connected live feed from Dummy CCTV at ${ip}:${port} (${cleanName})`);
+  logEvent('CCTV', `Located and connected live feed from camera at ${ip}:${port} (${cleanName})`);
   showToast(`Live Feed Connected: ${cleanName}`);
   if (window.sentinelAudio) window.sentinelAudio.play('connect');
 }

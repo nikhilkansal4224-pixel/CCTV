@@ -7,8 +7,8 @@ const net = require('net');
 const os = require('os');
 const crypto = require('crypto');
 
-// Standard ports commonly used by trusted IP Camera apps (e.g. IP Webcam, IP Camera Lite, DroidCam)
-const COMMON_CAMERA_PORTS = [8080, 8081, 4747, 8000, 80];
+// Standard ports commonly used by trusted IP Camera apps (e.g. IP Webcam, IP Camera Lite, DroidCam, Python YOLO Stream)
+const COMMON_CAMERA_PORTS = [8080, 8081, 8088, 4747, 8000, 80];
 
 // Common video and snapshot paths
 const STREAM_PROBE_PATHS = ['/video', '/videofeed', '/mjpegfeed', '/live.jpg', '/'];
@@ -114,7 +114,10 @@ function probeCameraHttp(host, port, username, password, timeoutMs = 1500) {
           let isIpCam = false;
           let appBrand = 'IP Camera';
 
-          if (serverHeader.toLowerCase().includes('ip webcam') || rawBody.includes('IP Webcam') || rawBody.includes('cur_video')) {
+          if (rawBody.includes('YOLO') || port === 8088 || serverHeader.toLowerCase().includes('yolo')) {
+            isIpCam = true;
+            appBrand = 'Sentinel YOLOv8 AI Camera';
+          } else if (serverHeader.toLowerCase().includes('ip webcam') || rawBody.includes('IP Webcam') || rawBody.includes('cur_video')) {
             isIpCam = true;
             appBrand = 'IP Webcam (Android)';
           } else if (serverHeader.toLowerCase().includes('droidcam') || port === 4747) {

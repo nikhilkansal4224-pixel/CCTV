@@ -811,13 +811,27 @@ async function handleUserConsentAndStart() {
         video: videoConstraint,
       };
 
-      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err1) {
+        console.warn('[Camera] Exact constraints failed, retrying with relaxed video constraints:', err1);
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: sourceChoice.length > 20 ? { deviceId: { exact: sourceChoice } } : { facingMode: sourceChoice },
+          });
+        } catch (err2) {
+          console.warn('[Camera] Relaxed constraints failed, retrying with default video stream:', err2);
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+      }
       console.log('[Camera] User explicitly granted camera permissions');
     }
 
-    // Attach stream to local preview viewfinder
+    // Attach stream to local preview viewfinder and start playback
     cameraPreviewVideo.srcObject = localStream;
     cameraPreviewVideo.classList.add('active');
+    cameraPreviewVideo.play().catch(e => console.warn('[Camera] Local preview play error:', e));
 
     // Check for torch capability on rear camera
     const videoTrack = localStream.getVideoTracks()[0];

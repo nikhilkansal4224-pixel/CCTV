@@ -131,11 +131,11 @@
               </svg>
               <span>Add Camera of Current Device</span>
             </button>
-            <button class="btn-host-add-cam btn-add-dummy-cctv" id="btnHostAddDummyCctv" title="Connect Phone as Dummy CCTV (IP Camera)" style="background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+            <button class="btn-host-add-cam btn-add-dummy-cctv" id="btnHostAddDummyCctv" title="Connect Phone or IP Camera" style="background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
               <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
-              <span>Connect Phone as Dummy CCTV</span>
+              <span>Connect Phone / IP Camera</span>
             </button>
             <span class="standby-or-tag">OR SCAN QR CODE WITH SMARTPHONE</span>
           </div>
@@ -216,8 +216,8 @@
             </svg>
           </button>
 
-          <!-- Connect Phone as Dummy CCTV Quick Toolbar Button -->
-          <button class="btn-icon" id="btnQuickAddDummyCctv" title="Connect Phone as Dummy CCTV" style="border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+          <!-- Connect Phone or IP Camera Quick Toolbar Button -->
+          <button class="btn-icon" id="btnQuickAddDummyCctv" title="Connect Phone / IP Camera" style="border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
@@ -388,12 +388,12 @@
             <span>+ Add Current Device Camera</span>
           </button>
 
-          <!-- Connect Phone as Dummy CCTV in Sidebar -->
-          <button class="btn btn-outline" id="btnDockAddDummyCctv" title="Connect Phone as Dummy CCTV" style="width: 100%; margin-top: 0.45rem; border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+          <!-- Connect Phone or IP Camera in Sidebar -->
+          <button class="btn btn-outline" id="btnDockAddDummyCctv" title="Connect Phone / IP Camera" style="width: 100%; margin-top: 0.45rem; border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
-            <span>+ Connect Phone Dummy CCTV</span>
+            <span>+ Connect Phone / IP Camera</span>
           </button>
         </div>
       </div>
@@ -457,7 +457,7 @@
 
   </main>
 
-  <!-- Phone as Dummy CCTV Modal -->
+  <!-- Phone / IP Camera Integration Modal -->
   <div class="cctv-modal-backdrop" id="dummyCctvModal" style="display: none;">
     <div class="cctv-modal-box">
       <!-- Modal Header -->
@@ -469,8 +469,8 @@
             </svg>
           </div>
           <div>
-            <h2 class="cctv-modal-title">Phone as Dummy CCTV</h2>
-            <p class="cctv-modal-desc">Turn any mobile phone into a surveillance camera with safe official apps</p>
+            <h2 class="cctv-modal-title">Phone / IP Camera Feed</h2>
+            <p class="cctv-modal-desc">Connect any mobile phone camera or local IP camera stream (live video)</p>
           </div>
         </div>
         <button class="cctv-modal-close" id="btnCloseCctvModal" title="Close Modal">&times;</button>
@@ -570,7 +570,7 @@
 
         <!-- Discovered Cameras Results Box -->
         <div class="cctv-results-box" id="cctvResultsBox" style="display: none;">
-          <div class="cctv-results-title">Discovered Dummy CCTV Feeds:</div>
+          <div class="cctv-results-title">Discovered Live Camera Feeds:</div>
           <div class="cctv-results-list" id="cctvResultsList"></div>
         </div>
 
