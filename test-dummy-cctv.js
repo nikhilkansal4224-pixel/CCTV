@@ -129,10 +129,26 @@ async function runTestSuite() {
   });
 
   // --- 4. VERIFY CAMERA PORT CONSTANTS & PROFILES ---
-  console.log('\n[4/4] Testing IP Camera Ports & App Profiles...');
+  console.log('\n[4/5] Testing IP Camera Ports & App Profiles...');
   assert(ipcam.COMMON_CAMERA_PORTS.includes(8080), 'Includes port 8080 (IP Webcam on Android)');
   assert(ipcam.COMMON_CAMERA_PORTS.includes(8081), 'Includes port 8081 (IP Camera Lite on iOS)');
   assert(ipcam.COMMON_CAMERA_PORTS.includes(4747), 'Includes port 4747 (DroidCam)');
+  assert(ipcam.COMMON_CAMERA_PORTS.includes(8088), 'Includes port 8088 (Sentinel YOLO Stream)');
+  assert(ipcam.COMMON_CAMERA_PORTS.includes(8443), 'Includes port 8443 (Secure SSL Camera)');
+
+  // --- 5. UNIVERSAL TARGET PARSER (ANY IP / WAN / DDNS / URL) ---
+  console.log('\n[5/5] Testing Universal Target Parser (Any IP / WAN / DDNS / URL)...');
+  const t1 = ipcam.parseCameraTarget('192.168.1.50');
+  assert(t1.host === '192.168.1.50' && t1.port === 8080 && t1.protocol === 'http:', 'Parses plain LAN IP correctly');
+
+  const t2 = ipcam.parseCameraTarget('mycamera.ddns.net:8082');
+  assert(t2.host === 'mycamera.ddns.net' && t2.port === 8082 && t2.protocol === 'http:', 'Parses WAN DDNS host and port');
+
+  const t3 = ipcam.parseCameraTarget('https://cctv.cloudproxy.com:8443/mjpeg');
+  assert(t3.host === 'cctv.cloudproxy.com' && t3.port === 8443 && t3.protocol === 'https:' && t3.path === '/mjpeg', 'Parses HTTPS secure cloud stream URL');
+
+  const t4 = ipcam.parseCameraTarget('http://operator:topsecret@10.0.0.15:4747/video');
+  assert(t4.host === '10.0.0.15' && t4.port === 4747 && t4.username === 'operator' && t4.password === 'topsecret', 'Parses inline HTTP basic credentials in URL');
 
   console.log('\n======================================================');
   console.log(`  RESULTS: ${passed} PASSED, ${failed} FAILED`);

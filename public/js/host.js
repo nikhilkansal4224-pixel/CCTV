@@ -154,6 +154,12 @@ async function loadNetworkInfo() {
         cloudOpt.selected = true;
         selectedHost = cloudHostVal;
         networkHostSelect.appendChild(cloudOpt);
+      } else {
+        // Offer Public Cloud WAN relay for mobile phones streaming across 4G/5G cellular
+        const wanOpt = document.createElement('option');
+        wanOpt.value = 'cctv-supabase.vercel.app';
+        wanOpt.textContent = '🌐 Public Cloud WAN (4G/5G Cellular, No Wi-Fi Needed)';
+        networkHostSelect.appendChild(wanOpt);
       }
 
       if (data.allIps) {
@@ -2239,6 +2245,51 @@ function initDummyCctvControls() {
     });
   });
 
+  const scopeBadge = document.getElementById('cctvScopeBadge');
+
+  if (inputIp) {
+    inputIp.addEventListener('input', () => {
+      const val = inputIp.value.trim();
+      if (!val) {
+        if (scopeBadge) scopeBadge.style.display = 'none';
+        return;
+      }
+
+      let badgeHtml = '';
+      if (/^https?:\/\//i.test(val)) {
+        try {
+          const u = new URL(val);
+          if (u.port && inputPort) inputPort.value = u.port;
+          badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;"><span>🔗</span> Direct Stream URL (${u.protocol.toUpperCase().replace(':', '')})</span>`;
+        } catch (e) {
+          badgeHtml = `<span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem;">URL Format</span>`;
+        }
+      } else if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.0\.0\.1|localhost)/.test(val)) {
+        badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;"><span>📶</span> Local Network (LAN Subnet)</span>`;
+        // Check if port is embedded e.g. 192.168.1.50:8081
+        if (val.includes(':') && !val.includes(']')) {
+          const parts = val.split(':');
+          if (parts[1] && !isNaN(Number(parts[1]))) {
+            if (inputPort) inputPort.value = parts[1];
+          }
+        }
+      } else {
+        badgeHtml = `<span style="display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;"><span>🌐</span> Remote WAN / Any IP (Cross-Network / Cellular / DDNS)</span>`;
+        if (val.includes(':') && !val.includes(']')) {
+          const parts = val.split(':');
+          if (parts[1] && !isNaN(Number(parts[1]))) {
+            if (inputPort) inputPort.value = parts[1];
+          }
+        }
+      }
+
+      if (scopeBadge) {
+        scopeBadge.style.display = 'block';
+        scopeBadge.innerHTML = badgeHtml;
+      }
+    });
+  }
+
   if (btnScan) {
     btnScan.addEventListener('click', async () => {
       const username = inputUser?.value?.trim() || 'admin';
@@ -2254,10 +2305,10 @@ function initDummyCctvControls() {
 
       if (scanStatus) {
         scanStatus.style.display = 'flex';
-        scanHeadline.textContent = ip ? `Scanning IP ${ip}:${port}...` : 'Scanning Local Subnet...';
+        scanHeadline.textContent = ip ? `Probing Target: ${ip}...` : 'Auto-Scanning Network Interfaces...';
         scanDetail.textContent = ip
-          ? 'Probing targeted IP and verifying credentials...'
-          : 'Sweeping local network for responsive Dummy CCTV cameras...';
+          ? 'Connecting to target address across video streaming ports...'
+          : 'Sweeping subnets in parallel for active IP Webcam & CCTV streams...';
       }
       if (resultsBox) resultsBox.style.display = 'none';
       if (resultsList) resultsList.innerHTML = '';
@@ -2286,9 +2337,11 @@ function initDummyCctvControls() {
           scanDetail.textContent = 'Clearance verified. Tap "Connect Feed" to stream live video.';
           renderCctvResults(data.cameras, username, password);
         } else {
-          scanHeadline.textContent = 'No Dummy CCTV Located on Subnet';
-          scanDetail.textContent = 'Verify your phone app is running with "Start server" and on same Wi-Fi.';
-          showToast('No active IP Camera detected on local subnet.');
+          scanHeadline.textContent = ip ? 'Target Host Not Responding to Auto-Probe' : 'No Cameras Found in Auto-Sweep';
+          scanDetail.textContent = ip
+            ? 'The remote address may have ICMP/status probe blocked. You can still direct-connect below:'
+            : 'Ensure camera app is running with "Start server". You can also enter the exact IP or URL below:';
+          showToast(ip ? 'Direct connection available' : 'No active IP Camera detected on local subnet.');
           renderDirectConnectOption(ip || '192.168.1.50', port, username, password);
         }
       } catch (err) {
@@ -2298,6 +2351,7 @@ function initDummyCctvControls() {
         if (scanHeadline) scanHeadline.textContent = 'Scan encountered an error';
         if (scanDetail) scanDetail.textContent = err.message || 'Network probe failed';
         showToast('Network scan error: ' + err.message);
+        renderDirectConnectOption(ip || '192.168.1.50', port, username, password);
       }
     });
   }
@@ -2355,40 +2409,75 @@ function initDummyCctvControls() {
     item.className = 'cctv-device-item';
     item.innerHTML = `
       <div class="cctv-device-info">
-        <span class="cctv-device-badge" style="background: #f59e0b;"></span>
+        <span class="cctv-device-badge" style="background: #3b82f6;"></span>
         <div>
-          <div class="cctv-device-name">Direct Stream: ${escapeHtml(ip)}:${port}</div>
-          <div class="cctv-device-ip">Tunnel stream directly via Sentinel Gateway Proxy</div>
+          <div class="cctv-device-name">Direct Target: ${escapeHtml(ip)}${port ? ':' + port : ''}</div>
+          <div class="cctv-device-ip">Connect directly via Sentinel Gateway Proxy (Any IP / WAN / LAN)</div>
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" id="btnForceConnectCctv" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
-        <span>Connect Live Feed</span>
-      </button>
+      <div style="display: flex; gap: 0.4rem;">
+        <button class="btn btn-primary btn-sm" id="btnForceConnectCctv" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+          <span>Connect Feed</span>
+        </button>
+      </div>
     `;
 
     item.querySelector('#btnForceConnectCctv').addEventListener('click', () => {
       closeDummyCctvModal();
       connectDummyCctvFeed({
         ip,
-        port: Number(port),
-        streamPath: port === '4747' ? '/video' : '/video',
+        port: port ? Number(port) : 8080,
+        streamPath: String(port) === '4747' ? '/video' : (String(port) === '8081' ? '/live.jpg' : '/video'),
         snapshotPath: '/shot.jpg',
-        name: `Dummy CCTV [${ip}]`,
+        name: `CCTV [${ip}]`,
         username,
         password,
       });
     });
 
     resultsList.appendChild(item);
+
+    // Also add shortcut for Local YOLO stream on port 8088
+    const yoloItem = document.createElement('div');
+    yoloItem.className = 'cctv-device-item';
+    yoloItem.style.marginTop = '0.5rem';
+    yoloItem.innerHTML = `
+      <div class="cctv-device-info">
+        <span class="cctv-device-badge" style="background: #10b981;"></span>
+        <div>
+          <div class="cctv-device-name">Sentinel Local AI Camera Stream (Port 8088)</div>
+          <div class="cctv-device-ip">Direct local loopback YOLO stream: http://127.0.0.1:8088/video</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnConnectLocalYolo" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+        <span>Connect AI Feed</span>
+      </button>
+    `;
+
+    yoloItem.querySelector('#btnConnectLocalYolo').addEventListener('click', () => {
+      closeDummyCctvModal();
+      connectDummyCctvFeed({
+        ip: '127.0.0.1',
+        port: 8088,
+        streamPath: '/video',
+        snapshotPath: '/shot.jpg',
+        name: 'Sentinel YOLO AI Cam [127.0.0.1:8088]',
+        username: '',
+        password: '',
+      });
+    });
+
+    resultsList.appendChild(yoloItem);
   }
 }
 
 function connectDummyCctvFeed(cfg) {
   const { ip, port, streamPath, snapshotPath, name, username, password } = cfg;
-  const deviceId = `CCTV-${String(ip).replace(/[^a-zA-Z0-9]/g, '-')}-${port}`;
+  const safeId = String(ip).replace(/[^a-zA-Z0-9]/g, '-').replace(/^-+|-+$/g, '');
+  const deviceId = `CCTV-${safeId || 'CAM'}-${port || 8080}`;
 
   if (cameraPeers.has(deviceId)) {
-    showToast(`Dummy CCTV (${ip}) is already active in matrix.`);
+    showToast(`CCTV (${ip}) is already active in matrix.`);
     focusCamera(deviceId);
     return;
   }
@@ -2400,8 +2489,8 @@ function connectDummyCctvFeed(cfg) {
   peer.ipCamConfig = { ip, port, streamPath, snapshotPath, username, password };
   peer.status = 'live';
 
-  // Construct secure stream proxy URL
-  const streamUrl = `/api/ipcam/stream?ip=${encodeURIComponent(ip)}&port=${port}&path=${encodeURIComponent(streamPath || '/video')}&user=${encodeURIComponent(username || '')}&pass=${encodeURIComponent(password || '')}&_t=${Date.now()}`;
+  // Construct secure stream proxy URL supporting ANY IP, Hostname, URL, and credentials
+  const streamUrl = `/api/ipcam/stream?ip=${encodeURIComponent(ip)}&port=${encodeURIComponent(port || '')}&path=${encodeURIComponent(streamPath || '')}&user=${encodeURIComponent(username || '')}&pass=${encodeURIComponent(password || '')}&_t=${Date.now()}`;
 
   // Hide the standard WebRTC video element when active as IP camera
   if (peer.videoEl) {

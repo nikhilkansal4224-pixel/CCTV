@@ -529,6 +529,7 @@ app.get('/api/network-info', (req, res) => {
 
   const httpUrl = isVercel ? `https://${hostHeader}` : `http://${localIp}:${HTTP_PORT}`;
   const httpsUrl = isVercel ? `https://${hostHeader}` : `https://${localIp}:${HTTPS_PORT}`;
+  const publicCloudUrl = 'https://cctv-supabase.vercel.app';
 
   res.json({
     localIp,
@@ -539,6 +540,7 @@ app.get('/api/network-info', (req, res) => {
     currentProtocol: isHttps ? 'https' : 'http',
     httpUrl,
     httpsUrl,
+    publicCloudUrl,
     isVercel,
   });
 });

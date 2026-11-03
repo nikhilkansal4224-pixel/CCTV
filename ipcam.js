@@ -1,5 +1,6 @@
 // SENTINEL // Phone as Dummy CCTV & IP Camera Integration Engine
 // Provides network discovery, subnet probing, credential verification, and MJPEG stream proxying.
+// Supports ANY IP, Hostname, DDNS, Cloud Tunnel, HTTP/HTTPS, and local subnets.
 
 const http = require('http');
 const https = require('https');
@@ -7,15 +8,131 @@ const net = require('net');
 const os = require('os');
 const crypto = require('crypto');
 
-// Standard ports commonly used by trusted IP Camera apps (e.g. IP Webcam, IP Camera Lite, DroidCam, Python YOLO Stream)
-const COMMON_CAMERA_PORTS = [8080, 8081, 8088, 4747, 8000, 80];
+// Standard camera ports (IP Webcam, IP Camera Lite, DroidCam, Python YOLO, ESP32, Generic MJPEG)
+const COMMON_CAMERA_PORTS = [8080, 8081, 8088, 4747, 8000, 80, 5000, 8888, 8082, 8090, 8443, 443];
 
-// Common video and snapshot paths
-const STREAM_PROBE_PATHS = ['/video', '/videofeed', '/mjpegfeed', '/live.jpg', '/'];
-const SNAPSHOT_PROBE_PATHS = ['/shot.jpg', '/snapshot.jpg', '/photo.jpg', '/image.jpg'];
+// Common video and snapshot probe paths
+const STREAM_PROBE_PATHS = ['/video', '/videofeed', '/mjpeg', '/live.jpg', '/mjpegfeed', '/'];
+const SNAPSHOT_PROBE_PATHS = ['/shot.jpg', '/snapshot.jpg', '/photo.jpg', '/image.jpg', '/capture'];
 
 /**
- * Discover local IPv4 subnets from network interfaces
+ * Universal Target Parser: Accepts ANY IP, Hostname, DDNS, ngrok/tunnel, or full URL
+ * Examples:
+ *   - '192.168.1.50' -> http://192.168.1.50:8080/video
+ *   - 'mycamera.ddns.net:8080' -> http://mycamera.ddns.net:8080/video
+ *   - 'https://remote-cctv.com:8443/mjpeg' -> https://remote-cctv.com:8443/mjpeg
+ *   - 'admin:secret@192.168.1.10:8081/live.jpg' -> http://192.168.1.10:8081/live.jpg (auth preserved)
+ */
+function parseCameraTarget(params = {}) {
+  let raw = '';
+  let portParam = null;
+  let pathParam = '';
+  let userParam = '';
+  let passParam = '';
+
+  if (typeof params === 'string') {
+    raw = params.trim();
+  } else if (params && typeof params === 'object') {
+    raw = String(params.ip || params.target || params.url || '').trim();
+    portParam = params.port ? Number(params.port) : null;
+    pathParam = params.path ? String(params.path).trim() : '';
+    userParam = params.user || params.username || '';
+    passParam = params.pass || params.password || '';
+  }
+
+  let protocol = 'http:';
+  let host = '';
+  let port = portParam;
+  let targetPath = pathParam;
+  let username = userParam;
+  let password = passParam;
+
+  // 1. Detect URL scheme
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      protocol = u.protocol.toLowerCase();
+      host = u.hostname;
+      if (u.port) port = Number(u.port);
+      if (u.pathname && u.pathname !== '/') {
+        targetPath = u.pathname + (u.search || '');
+      }
+      if (u.username) username = decodeURIComponent(u.username);
+      if (u.password) password = decodeURIComponent(u.password);
+    } catch (e) {
+      raw = raw.replace(/^https?:\/\//i, '');
+    }
+  }
+
+  // 2. Parse inline auth: user:pass@host
+  if (!host && raw.includes('@')) {
+    const atIdx = raw.lastIndexOf('@');
+    const authPart = raw.slice(0, atIdx);
+    raw = raw.slice(atIdx + 1);
+    const colonIdx = authPart.indexOf(':');
+    if (colonIdx !== -1) {
+      if (!username) username = decodeURIComponent(authPart.slice(0, colonIdx));
+      if (!password) password = decodeURIComponent(authPart.slice(colonIdx + 1));
+    } else {
+      if (!username) username = decodeURIComponent(authPart);
+    }
+  }
+
+  // 3. Parse path from host if present: host/path
+  if (!host) {
+    const slashIdx = raw.indexOf('/');
+    if (slashIdx !== -1) {
+      if (!targetPath) targetPath = raw.slice(slashIdx);
+      raw = raw.slice(0, slashIdx);
+    }
+
+    // 4. Parse port: host:port (handling IPv6 brackets if any)
+    const colonIdx = raw.lastIndexOf(':');
+    if (colonIdx !== -1 && !raw.includes(']')) {
+      const p = Number(raw.slice(colonIdx + 1));
+      if (!isNaN(p) && p > 0 && p <= 65535) {
+        if (!port) port = p;
+        raw = raw.slice(0, colonIdx);
+      }
+    }
+
+    host = raw.trim();
+  }
+
+  // Auto-switch protocol to https if port is 443 or 8443 and protocol wasn't explicitly set
+  if ((port === 443 || port === 8443) && protocol === 'http:') {
+    protocol = 'https:';
+  }
+
+  // Default port based on protocol
+  if (!port) {
+    port = protocol === 'https:' ? 443 : 8080;
+  }
+
+  // Default stream path
+  if (!targetPath || targetPath === '/') {
+    targetPath = port === 4747 ? '/video' : (port === 8081 ? '/live.jpg' : '/video');
+  }
+
+  // Clean brackets from IPv6 host if needed
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.slice(1, -1);
+  }
+
+  return {
+    protocol,
+    host: host || '127.0.0.1',
+    port,
+    path: targetPath,
+    username,
+    password,
+    isHttps: protocol === 'https:',
+    fullUrl: `${protocol}//${host || '127.0.0.1'}:${port}${targetPath}`,
+  };
+}
+
+/**
+ * Discover local IPv4 subnets from all network interfaces
  */
 function getLocalSubnets() {
   const subnets = [];
@@ -46,7 +163,7 @@ function getLocalSubnets() {
 /**
  * Fast TCP probe to check if a specific port is open on a host
  */
-function probeTcpPort(host, port, timeoutMs = 600) {
+function probeTcpPort(host, port, timeoutMs = 350) {
   return new Promise((resolve) => {
     let responded = false;
     const socket = new net.Socket();
@@ -62,7 +179,6 @@ function probeTcpPort(host, port, timeoutMs = 600) {
     };
 
     socket.setTimeout(timeoutMs);
-
     socket.on('connect', () => finish(true));
     socket.on('timeout', () => finish(false));
     socket.on('error', () => finish(false));
@@ -76,26 +192,30 @@ function probeTcpPort(host, port, timeoutMs = 600) {
 }
 
 /**
- * Make an HTTP probe to a responsive host to check for IP Camera signature and credentials
+ * Make an HTTP/HTTPS probe to check for IP Camera signature and verify credentials
  */
-function probeCameraHttp(host, port, username, password, timeoutMs = 1500) {
+function probeCameraHttp(host, port, username, password, timeoutMs = 1200, isHttps = false) {
   return new Promise((resolve) => {
-    const authHeader = 'Basic ' + Buffer.from(`${username || ''}:${password || ''}`).toString('base64');
-    
-    // Probe /status.json or /video or root /
-    const probePath = '/status.json';
+    const authHeader = (username || password)
+      ? 'Basic ' + Buffer.from(`${username || ''}:${password || ''}`).toString('base64')
+      : undefined;
 
-    const req = http.request(
+    const probeClient = isHttps ? https : http;
+    const headers = {
+      'User-Agent': 'Sentinel-CCTV-Gateway/2.0',
+      'Accept': 'text/html,application/json,image/*,*/*',
+    };
+    if (authHeader) headers['Authorization'] = authHeader;
+
+    const req = probeClient.request(
       {
         host,
         port,
-        path: probePath,
+        path: '/status.json',
         method: 'GET',
-        headers: {
-          'Authorization': authHeader,
-          'User-Agent': 'Sentinel-CCTV-Gateway/2.0',
-        },
+        headers,
         timeout: timeoutMs,
+        rejectUnauthorized: false, // Allow self-signed SSL on local/DDNS cameras
       },
       (res) => {
         let rawBody = '';
@@ -105,38 +225,56 @@ function probeCameraHttp(host, port, username, password, timeoutMs = 1500) {
         });
 
         res.on('end', () => {
-          const serverHeader = res.headers['server'] || '';
-          const contentType = res.headers['content-type'] || '';
+          const serverHeader = (res.headers['server'] || '').toLowerCase();
+          const contentType = (res.headers['content-type'] || '').toLowerCase();
           const authRequired = res.statusCode === 401;
           const authSuccess = res.statusCode >= 200 && res.statusCode < 300;
 
-          // Detect IP Webcam app signature or standard MJPEG server
           let isIpCam = false;
           let appBrand = 'IP Camera';
+          let streamPath = '/video';
+          let snapshotPath = '/shot.jpg';
 
-          if (rawBody.includes('YOLO') || port === 8088 || serverHeader.toLowerCase().includes('yolo')) {
+          if (rawBody.includes('YOLO') || port === 8088 || serverHeader.includes('yolo')) {
             isIpCam = true;
             appBrand = 'Sentinel YOLOv8 AI Camera';
-          } else if (serverHeader.toLowerCase().includes('ip webcam') || rawBody.includes('IP Webcam') || rawBody.includes('cur_video')) {
+            streamPath = '/video';
+            snapshotPath = '/shot.jpg';
+          } else if (serverHeader.includes('ip webcam') || rawBody.includes('IP Webcam') || rawBody.includes('cur_video')) {
             isIpCam = true;
             appBrand = 'IP Webcam (Android)';
-          } else if (serverHeader.toLowerCase().includes('droidcam') || port === 4747) {
+            streamPath = '/video';
+            snapshotPath = '/shot.jpg';
+          } else if (serverHeader.includes('droidcam') || port === 4747) {
             isIpCam = true;
             appBrand = 'DroidCam';
+            streamPath = '/video';
+            snapshotPath = '/shot.jpg';
           } else if (port === 8081 || rawBody.includes('MJPEG') || contentType.includes('image') || contentType.includes('mixed-replace')) {
             isIpCam = true;
             appBrand = 'IP Camera Lite (iOS)';
-          } else if (authRequired || authSuccess || res.statusCode === 200) {
-            // General responsive HTTP service on typical camera port
+            streamPath = '/live.jpg';
+            snapshotPath = '/snapshot.jpg';
+          } else if (rawBody.includes('esp32') || serverHeader.includes('esp32')) {
             isIpCam = true;
-            appBrand = 'Generic IP Camera';
+            appBrand = 'ESP32-CAM Stream';
+            streamPath = ':81/stream';
+            snapshotPath = '/capture';
+          } else if (authRequired || authSuccess || res.statusCode === 200) {
+            isIpCam = true;
+            appBrand = isHttps ? 'Secure IP Camera (HTTPS)' : 'Generic IP Camera';
+            streamPath = port === 8081 ? '/live.jpg' : '/video';
+            snapshotPath = '/shot.jpg';
           }
 
           resolve({
             host,
             port,
+            protocol: isHttps ? 'https:' : 'http:',
             isIpCam,
             appBrand,
+            streamPath,
+            snapshotPath,
             statusCode: res.statusCode,
             authRequired,
             authSuccess,
@@ -153,7 +291,12 @@ function probeCameraHttp(host, port, username, password, timeoutMs = 1500) {
     });
 
     req.on('error', () => {
-      resolve(null);
+      // If HTTP failed on port 443/8443, try HTTPS fallback
+      if (!isHttps && (port === 443 || port === 8443 || port === 8080)) {
+        probeCameraHttp(host, port, username, password, timeoutMs, true).then(resolve);
+      } else {
+        resolve(null);
+      }
     });
 
     req.end();
@@ -161,28 +304,37 @@ function probeCameraHttp(host, port, username, password, timeoutMs = 1500) {
 }
 
 /**
- * Scan the local network to locate the Dummy CCTV via its IP address
+ * Scan the network to locate cameras via IP, Hostname, or Subnet sweep
  */
-async function scanNetwork({ username, password, targetIp, port, subnet, timeoutMs = 600 }) {
+async function scanNetwork({ username, password, targetIp, port, subnet, timeoutMs = 400 }) {
   const discovered = [];
-  const portsToScan = port ? [Number(port)] : COMMON_CAMERA_PORTS;
 
-  // 1. If user provided a specific IP, directly probe that IP
-  if (targetIp && targetIp.trim().length > 0) {
-    const cleanIp = targetIp.trim();
+  // 1. If user provided a specific Target IP / Hostname / Stream URL
+  if (targetIp && String(targetIp).trim().length > 0) {
+    const target = parseCameraTarget({
+      ip: targetIp,
+      port,
+      user: username,
+      pass: password,
+    });
+
+    const portsToScan = port ? [Number(port)] : (target.port ? [target.port] : [8080, 8081, 8088, 4747, 8000, 80, 8443, 443]);
+
     for (const p of portsToScan) {
-      const tcpOpen = await probeTcpPort(cleanIp, p, timeoutMs);
+      const tcpOpen = await probeTcpPort(target.host, p, timeoutMs);
       if (tcpOpen) {
-        const httpResult = await probeCameraHttp(cleanIp, p, username, password);
+        const httpResult = await probeCameraHttp(target.host, p, target.username, target.password, 1200, target.isHttps || p === 443 || p === 8443);
         if (httpResult) {
           discovered.push({
-            ip: cleanIp,
+            ip: target.host,
             port: p,
-            streamPath: p === 4747 ? '/video' : (p === 8081 ? '/live.jpg' : '/video'),
-            snapshotPath: '/shot.jpg',
-            name: `${httpResult.appBrand} [${cleanIp}:${p}]`,
+            protocol: httpResult.protocol || target.protocol,
+            streamPath: target.path !== '/video' ? target.path : httpResult.streamPath,
+            snapshotPath: httpResult.snapshotPath || '/shot.jpg',
+            name: `${httpResult.appBrand} [${target.host}:${p}]`,
             authStatus: httpResult.authSuccess ? 'authenticated' : (httpResult.authRequired ? 'unauthorized' : 'open'),
             brand: httpResult.appBrand,
+            url: `${httpResult.protocol || target.protocol}//${target.host}:${p}${target.path || httpResult.streamPath}`,
           });
         }
       }
@@ -196,39 +348,46 @@ async function scanNetwork({ username, password, targetIp, port, subnet, timeout
     };
   }
 
-  // 2. Auto-Scan Local Subnet
+  // 2. High-Speed Subnet Multi-Port Auto-Scan
   const subnets = subnet ? [subnet] : getLocalSubnets();
-  const primarySubnet = subnets[0];
-  const scanCandidates = [];
+  const candidateHosts = [];
 
-  // Generate candidate IP list (1 to 254)
-  for (let i = 1; i <= 254; i++) {
-    scanCandidates.push(`${primarySubnet}.${i}`);
+  // Scan all discovered subnets (Wi-Fi, hotspot, tethering)
+  for (const sub of subnets) {
+    for (let i = 1; i <= 254; i++) {
+      candidateHosts.push(`${sub}.${i}`);
+    }
   }
 
-  // Also include 127.0.0.1 for local testing
-  scanCandidates.unshift('127.0.0.1');
+  // Include localhost & loopback
+  candidateHosts.unshift('127.0.0.1');
 
-  const defaultPort = port ? Number(port) : 8080;
+  // Candidate camera ports for broad scan
+  const portsToProbe = port ? [Number(port)] : [8080, 8081, 8088, 4747];
 
-  // Run batch scans with concurrency
-  const BATCH_SIZE = 45;
-  for (let i = 0; i < scanCandidates.length; i += BATCH_SIZE) {
-    const chunk = scanCandidates.slice(i, i + BATCH_SIZE);
-    const probes = chunk.map(async (ip) => {
-      const isOpen = await probeTcpPort(ip, defaultPort, timeoutMs);
-      if (isOpen) {
-        const httpInfo = await probeCameraHttp(ip, defaultPort, username, password, 1200);
-        if (httpInfo) {
-          discovered.push({
-            ip,
-            port: defaultPort,
-            streamPath: defaultPort === 4747 ? '/video' : '/video',
-            snapshotPath: '/shot.jpg',
-            name: `${httpInfo.appBrand} [${ip}:${defaultPort}]`,
-            authStatus: httpInfo.authSuccess ? 'authenticated' : (httpInfo.authRequired ? 'unauthorized' : 'open'),
-            brand: httpInfo.appBrand,
-          });
+  // Batch probe candidates with high concurrency
+  const BATCH_SIZE = 60;
+  for (let i = 0; i < candidateHosts.length; i += BATCH_SIZE) {
+    const chunk = candidateHosts.slice(i, i + BATCH_SIZE);
+    const probes = chunk.map(async (host) => {
+      for (const p of portsToProbe) {
+        const isOpen = await probeTcpPort(host, p, timeoutMs);
+        if (isOpen) {
+          const httpInfo = await probeCameraHttp(host, p, username, password, 1000);
+          if (httpInfo && httpInfo.isIpCam) {
+            discovered.push({
+              ip: host,
+              port: p,
+              protocol: httpInfo.protocol || 'http:',
+              streamPath: httpInfo.streamPath,
+              snapshotPath: httpInfo.snapshotPath,
+              name: `${httpInfo.appBrand} [${host}:${p}]`,
+              authStatus: httpInfo.authSuccess ? 'authenticated' : (httpInfo.authRequired ? 'unauthorized' : 'open'),
+              brand: httpInfo.appBrand,
+              url: `http://${host}:${p}${httpInfo.streamPath}`,
+            });
+            break; // Found camera on this host, move to next
+          }
         }
       }
     });
@@ -239,46 +398,54 @@ async function scanNetwork({ username, password, targetIp, port, subnet, timeout
   return {
     success: true,
     mode: 'auto_scan',
-    subnet: `${primarySubnet}.0/24`,
-    scannedCount: scanCandidates.length,
+    subnetsScanned: subnets,
+    portsScanned: portsToProbe,
+    scannedCount: candidateHosts.length,
     cameras: discovered,
   };
 }
 
 /**
- * Proxy live MJPEG video stream from the phone camera to browser
+ * Proxy live video stream from ANY IP, Hostname, or URL (HTTP or HTTPS) to browser
  */
 function proxyStream(req, res) {
   const { ip, port, path: streamPath, user, pass } = req.query;
 
-  if (!ip || !port) {
-    return res.status(400).send('Missing required ip or port parameter');
+  if (!ip) {
+    return res.status(400).send('Missing required ip parameter');
   }
 
-  const cleanIp = String(ip).trim();
-  const cleanPort = Number(port);
-  const targetPath = streamPath || '/video';
+  const target = parseCameraTarget({
+    ip,
+    port,
+    path: streamPath,
+    user,
+    pass,
+  });
 
-  const authHeader = (user || pass)
-    ? 'Basic ' + Buffer.from(`${user || ''}:${pass || ''}`).toString('base64')
+  const authHeader = (target.username || target.password)
+    ? 'Basic ' + Buffer.from(`${target.username}:${target.password}`).toString('base64')
     : undefined;
 
   const headers = {
     'User-Agent': 'Sentinel-CCTV-Gateway/2.0',
-    'Accept': 'multipart/x-mixed-replace, image/jpeg, */*',
+    'Accept': 'multipart/x-mixed-replace, image/jpeg, image/*, */*',
   };
   if (authHeader) {
     headers['Authorization'] = authHeader;
   }
 
-  const upstreamReq = http.request(
+  const client = target.isHttps ? https : http;
+
+  const upstreamReq = client.request(
     {
-      host: cleanIp,
-      port: cleanPort,
-      path: targetPath,
+      host: target.host,
+      port: target.port,
+      path: target.path,
       method: 'GET',
       headers,
       timeout: 10000,
+      rejectUnauthorized: false, // Allow self-signed SSL on local IP cams / DDNS
     },
     (upstreamRes) => {
       if (upstreamRes.statusCode === 401) {
@@ -307,7 +474,7 @@ function proxyStream(req, res) {
       upstreamRes.pipe(res);
 
       upstreamRes.on('error', (err) => {
-        console.warn('[IPCam Proxy] Upstream stream error:', err.message);
+        console.warn(`[IPCam Proxy] Stream pipe error (${target.host}:${target.port}):`, err.message);
         try {
           res.end();
         } catch (e) {}
@@ -318,18 +485,17 @@ function proxyStream(req, res) {
   upstreamReq.on('timeout', () => {
     upstreamReq.destroy();
     if (!res.headersSent) {
-      res.status(504).json({ error: 'Connection to camera timed out' });
+      res.status(504).json({ error: `Connection to camera at ${target.host}:${target.port} timed out` });
     }
   });
 
   upstreamReq.on('error', (err) => {
-    console.warn('[IPCam Proxy] Upstream request error:', err.message);
+    console.warn(`[IPCam Proxy] Upstream request error (${target.host}:${target.port}):`, err.message);
     if (!res.headersSent) {
-      res.status(502).json({ error: `Cannot reach camera at ${cleanIp}:${cleanPort}: ${err.message}` });
+      res.status(502).json({ error: `Cannot reach camera at ${target.host}:${target.port}: ${err.message}` });
     }
   });
 
-  // Clean up when client disconnects
   req.on('close', () => {
     upstreamReq.destroy();
   });
@@ -338,47 +504,54 @@ function proxyStream(req, res) {
 }
 
 /**
- * Proxy a single snapshot frame from the phone camera
+ * Proxy a single snapshot frame from ANY IP or URL
  */
 function proxySnapshot(req, res) {
   const { ip, port, path: snapPath, user, pass } = req.query;
 
-  if (!ip || !port) {
-    return res.status(400).send('Missing required ip or port parameter');
+  if (!ip) {
+    return res.status(400).send('Missing required ip parameter');
   }
 
-  const cleanIp = String(ip).trim();
-  const cleanPort = Number(port);
-  const targetPath = snapPath || '/shot.jpg';
+  const target = parseCameraTarget({
+    ip,
+    port,
+    path: snapPath || '/shot.jpg',
+    user,
+    pass,
+  });
 
-  const authHeader = (user || pass)
-    ? 'Basic ' + Buffer.from(`${user || ''}:${pass || ''}`).toString('base64')
+  const authHeader = (target.username || target.password)
+    ? 'Basic ' + Buffer.from(`${target.username}:${target.password}`).toString('base64')
     : undefined;
 
   const headers = {
     'User-Agent': 'Sentinel-CCTV-Gateway/2.0',
-    'Accept': 'image/jpeg, image/*',
+    'Accept': 'image/jpeg, image/*, */*',
   };
   if (authHeader) {
     headers['Authorization'] = authHeader;
   }
 
-  const upstreamReq = http.request(
+  const client = target.isHttps ? https : http;
+
+  const upstreamReq = client.request(
     {
-      host: cleanIp,
-      port: cleanPort,
-      path: targetPath,
+      host: target.host,
+      port: target.port,
+      path: target.path,
       method: 'GET',
       headers,
-      timeout: 5000,
+      timeout: 6000,
+      rejectUnauthorized: false,
     },
     (upstreamRes) => {
       if (upstreamRes.statusCode === 401) {
-        return res.status(401).json({ error: 'Authentication failed' });
+        return res.status(401).json({ error: 'Authentication failed for snapshot' });
       }
 
       res.writeHead(200, {
-        'Content-Type': 'image/jpeg',
+        'Content-Type': upstreamRes.headers['content-type'] || 'image/jpeg',
         'Cache-Control': 'no-cache, no-store',
         'Access-Control-Allow-Origin': '*',
       });
@@ -410,9 +583,7 @@ function createMockMjpegStream(req, res, user = 'admin') {
     'Access-Control-Allow-Origin': '*',
   });
 
-  // 1x1 or small JPEG buffer template or SVG-to-JPEG representation
-  // For lightweight mock streaming, we can emit a small valid JPEG frame at 5 FPS
-  // Minimal 1x1 JPEG frame
+  // Minimal valid 1x1 JPEG frame
   const sampleJpeg = Buffer.from([
     0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48,
     0x00, 0x48, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,
@@ -442,6 +613,7 @@ function createMockMjpegStream(req, res, user = 'admin') {
 }
 
 module.exports = {
+  parseCameraTarget,
   scanNetwork,
   proxyStream,
   proxySnapshot,
@@ -449,4 +621,3 @@ module.exports = {
   getLocalSubnets,
   COMMON_CAMERA_PORTS,
 };
-
