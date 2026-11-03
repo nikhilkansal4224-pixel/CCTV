@@ -3363,6 +3363,141 @@ body {
   z-index: 1;
 }
 
+/* --- Real CCTV Operations & Cybernetic Vision Matrix --- */
+
+/* CCTV Mobile Stealth / Battery-Saver Blackout Display */
+.cctv-stealth-overlay {
+  position: fixed;
+  inset: 0;
+  background: #020204;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.stealth-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.stealth-radar-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 16px #10b981;
+  animation: radarPulse 2s infinite ease-in-out;
+}
+
+@keyframes radarPulse {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.25); opacity: 1; box-shadow: 0 0 24px #10b981; }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
+
+.stealth-cctv-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #34d399;
+  opacity: 0.8;
+}
+
+.stealth-clock {
+  font-family: var(--font-mono);
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
+}
+
+.stealth-tap-hint {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: #71717a;
+  letter-spacing: 0.08em;
+  margin-top: 0.4rem;
+}
+
+/* Real-Time CCTV Security Intrusion Alert Border */
+.camera-tile.cctv-alert-active {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.8), 0 0 24px rgba(239, 68, 68, 0.45) !important;
+  animation: cctvAlertPulse 1.2s infinite ease-in-out;
+}
+
+@keyframes cctvAlertPulse {
+  0% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.9), 0 0 16px rgba(239, 68, 68, 0.35); }
+  50% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 1), 0 0 32px rgba(239, 68, 68, 0.65); }
+  100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.9), 0 0 16px rgba(239, 68, 68, 0.35); }
+}
+
+/* CCTV On-Screen Display (OSD) Timestamp & Channel */
+.tile-osd-bar {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.tile-osd-time {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  letter-spacing: 0.05em;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* 2x2 Quad Grid Layout */
+.camera-grid.quad-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 768px) {
+  .camera-grid.quad-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Patrol Mode Indicator Banner */
+.patrol-active-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #c4b5fd;
+  animation: blink 2s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 
 
 

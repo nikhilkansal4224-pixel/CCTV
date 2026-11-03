@@ -157,6 +157,16 @@ class SentinelAudio {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
         osc.start(now);
         osc.stop(now + 0.08);
+      } else if (type === 'alert') {
+        // High-tech CCTV intrusion detection pip
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(980, now);
+        osc.frequency.setValueAtTime(1320, now + 0.08);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.22);
       } else if (type === 'record') {
         // Pulse blip
         osc.type = 'sine';

@@ -588,6 +588,12 @@ async function initCamera() {
   if (btnToggleMic) btnToggleMic.addEventListener('click', toggleMicMute);
   if (btnZoom) btnZoom.addEventListener('click', toggleDigitalZoom);
 
+  // CCTV Stealth / Dim Mode listeners
+  const btnStealthDim = document.getElementById('btnStealthDim');
+  if (btnStealthDim) btnStealthDim.addEventListener('click', toggleStealthMode);
+  const stealthOverlay = document.getElementById('stealthOverlay');
+  if (stealthOverlay) stealthOverlay.addEventListener('click', toggleStealthMode);
+
   // Sleep Timer Button & Popover
   const btnCamSleepTimer = document.getElementById('btnCamSleepTimer');
   const camSleepPopover = document.getElementById('camSleepPopover');
@@ -758,6 +764,14 @@ function connectWebSocket() {
         window.showToast('Host extended session duration (+10 mins)');
         break;
 
+      case 'remote-toggle-torch':
+        toggleTorch();
+        break;
+
+      case 'remote-flip-camera':
+        toggleCameraFacing();
+        break;
+
       case 'session-ended':
         handleSessionEnded(msg.reason || 'Session closed by host');
         break;
@@ -849,6 +863,14 @@ async function handleUserConsentAndStart() {
       btnToggleMic.style.display = 'flex';
     }
 
+    // Set motion hint for ultra-smooth 30fps CCTV streaming
+    if (videoTrack && 'contentHint' in videoTrack) {
+      videoTrack.contentHint = 'motion';
+    }
+
+    // Keep mobile screen awake 24/7 during CCTV streaming
+    acquireWakeLock();
+
     // Hide permission overlay & show active viewfinder controls
     permissionOverlay.style.display = 'none';
     streamingControls.style.display = 'flex';
@@ -925,6 +947,61 @@ async function handleUserConsentAndStart() {
     showError(guidance);
   }
 }
+// 24/7 Screen WakeLock Manager
+let wakeLockSentinel = null;
+async function acquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      console.log('[Camera] Screen WakeLock acquired (24/7 CCTV active)');
+      const pill = document.getElementById('mobileWakeLockPill');
+      if (pill) pill.style.display = 'inline-flex';
+      wakeLockSentinel.addEventListener('release', () => {
+        console.log('[Camera] Screen WakeLock released');
+        if (pill) pill.style.display = 'none';
+        wakeLockSentinel = null;
+      });
+    }
+  } catch (err) {
+    console.warn('[Camera] WakeLock error:', err);
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !wakeLockSentinel && localStream) {
+    acquireWakeLock();
+  }
+});
+
+// CCTV Stealth / Dim Display Mode (Battery Saver & OLED Burn-in Protection)
+let isStealthMode = false;
+let stealthClockInterval = null;
+
+function toggleStealthMode() {
+  const overlay = document.getElementById('stealthOverlay');
+  const clockEl = document.getElementById('stealthClock');
+  if (!overlay) return;
+
+  isStealthMode = !isStealthMode;
+  overlay.style.display = isStealthMode ? 'flex' : 'none';
+
+  if (isStealthMode) {
+    window.showToast('CCTV Stealth Mode ON: Tap screen to wake');
+    function updateClock() {
+      const d = new Date();
+      if (clockEl) {
+        clockEl.textContent = d.toTimeString().split(' ')[0];
+      }
+    }
+    updateClock();
+    if (stealthClockInterval) clearInterval(stealthClockInterval);
+    stealthClockInterval = setInterval(updateClock, 1000);
+  } else {
+    if (stealthClockInterval) clearInterval(stealthClockInterval);
+    window.showToast('CCTV Display restored');
+  }
+}
+
 // Toggle Microphone Mute during live stream
 function toggleMicMute() {
   if (!localStream) return;

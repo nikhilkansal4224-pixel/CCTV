@@ -1229,6 +1229,18 @@ async function start() {
         return;
       }
 
+      // Remote hardware command from Host to Mobile Camera (Torch, Lens Flip)
+      if (type === 'remote-toggle-torch' || type === 'remote-flip-camera') {
+        const deviceId = data.deviceId;
+        if (deviceId && currentSession.cameras.has(deviceId)) {
+          const cam = currentSession.cameras.get(deviceId);
+          if (cam.ws && cam.ws.readyState === 1) {
+            cam.ws.send(JSON.stringify(data));
+          }
+        }
+        return;
+      }
+
       // Voluntary leave from camera device (e.g. clicking red cross on camera device)
       if (type === 'leave-device' || (type === 'end-session' && boundRole === 'camera')) {
         const deviceId = boundDeviceId || data.deviceId;

@@ -33,6 +33,12 @@
         <span id="headerDeviceId" style="font-family: var(--font-mono); font-weight: 700; color: #ffffff;">...</span>
       </div>
 
+      <!-- 24/7 WakeLock Indicator -->
+      <div class="mobile-live-pill" id="mobileWakeLockPill" style="display: none; border-color: rgba(16, 185, 129, 0.45); color: #34d399; background: rgba(16, 185, 129, 0.12);" title="Screen WakeLock Active: Phone will stay awake 24/7">
+        <span>⚡</span>
+        <span style="font-family: var(--font-mono); font-weight: 700; font-size: 0.65rem;">AWAKE 24/7</span>
+      </div>
+
       <!-- Live / Standby Status Pill -->
       <div class="mobile-live-pill waiting" id="mobileStatusIndicator">
         <span class="status-dot waiting" id="mobileStatusDot"></span>
@@ -239,6 +245,13 @@
           <span style="font-size: 0.8rem; font-weight: 700; font-family: var(--font-mono);" id="zoomLabel">1x</span>
         </button>
 
+        <!-- CCTV Stealth Dim Mode Button (Saves battery & prevents OLED burn-in) -->
+        <button class="cam-round-btn" id="btnStealthDim" title="CCTV Stealth / Dim Display Mode">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        </button>
+
         <!-- Torch Button (if supported) -->
         <button class="cam-round-btn" id="btnToggleTorch" style="display: none;" title="Toggle Flashlight">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -271,6 +284,16 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+      </div>
+    </div>
+
+    <!-- CCTV Stealth / Power-Saver Blackout Overlay -->
+    <div class="cctv-stealth-overlay" id="stealthOverlay" style="display: none;">
+      <div class="stealth-content">
+        <div class="stealth-radar-dot"></div>
+        <div class="stealth-cctv-label">CCTV NODE ACTIVE // STREAMING 24/7</div>
+        <div class="stealth-clock" id="stealthClock">00:00:00</div>
+        <div class="stealth-tap-hint">TAP ANYWHERE TO WAKE DISPLAY</div>
       </div>
     </div>
 

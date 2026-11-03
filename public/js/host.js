@@ -542,6 +542,20 @@ function getOrCreateCameraTile(deviceId, deviceName) {
       </div>
 
       <div class="tile-header-actions">
+        <!-- Remote Torch Toggle -->
+        <button class="tile-btn btn-tile-torch" title="Toggle Remote Phone Flashlight">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </button>
+
+        <!-- Remote Camera Lens Flip -->
+        <button class="tile-btn btn-tile-flip" title="Flip Remote Camera (Front/Rear)">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+
         <!-- Snapshot Frame -->
         <button class="tile-btn btn-tile-snap" title="Snapshot Frame">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -604,6 +618,11 @@ function getOrCreateCameraTile(deviceId, deviceName) {
         <div style="font-size: 0.7rem; color: var(--text-tertiary);">User must tap "Allow & Start Camera" on device</div>
       </div>
 
+      <!-- Real-Time CCTV On-Screen Display (OSD) -->
+      <div class="tile-osd-bar">
+        <span class="tile-osd-time">--:--:--</span>
+      </div>
+
       <!-- Live Badge -->
       <div class="tile-live-badge" style="display: none;">
         <span class="badge-dot"></span>
@@ -634,6 +653,37 @@ function getOrCreateCameraTile(deviceId, deviceName) {
   const btnKick = cardEl.querySelector('.btn-tile-kick');
   const btnSleep = cardEl.querySelector('.btn-tile-sleep');
   const sleepMenu = cardEl.querySelector('.tile-sleep-menu');
+
+  const btnTorch = cardEl.querySelector('.btn-tile-torch');
+  const btnFlip = cardEl.querySelector('.btn-tile-flip');
+
+  if (btnTorch) {
+    btnTorch.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'remote-toggle-torch',
+          sessionId: currentSessionId,
+          deviceId,
+        }));
+        showToast(`Sent torch toggle signal to [${cleanName}]`);
+      }
+    });
+  }
+
+  if (btnFlip) {
+    btnFlip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'remote-flip-camera',
+          sessionId: currentSessionId,
+          deviceId,
+        }));
+        showToast(`Flipping camera lens on [${cleanName}]...`);
+      }
+    });
+  }
 
   btnSnap.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -702,6 +752,7 @@ function getOrCreateCameraTile(deviceId, deviceName) {
     isMuted: true,
     status: 'waiting',
     sleepTimer: initialSleepTimer,
+    trackedTargets: [],
   };
 
   cameraPeers.set(deviceId, peer);
@@ -764,6 +815,61 @@ function restoreGridView() {
 
   if (btnModeGrid) btnModeGrid.classList.add('active');
   if (btnModeFocus) btnModeFocus.classList.remove('active');
+}
+
+let patrolInterval = null;
+let isPatrolActive = false;
+
+function togglePatrolMode() {
+  isPatrolActive = !isPatrolActive;
+  const btn = document.getElementById('btnModePatrol');
+  if (btn) btn.classList.toggle('active', isPatrolActive);
+
+  if (isPatrolActive) {
+    if (cameraGrid) cameraGrid.classList.remove('quad-layout');
+    const qBtn = document.getElementById('btnModeQuad');
+    if (qBtn) qBtn.classList.remove('active');
+    showToast('Auto-Patrol Mode ACTIVE: Rotating cameras every 8s');
+    startPatrolCycle();
+  } else {
+    stopPatrolCycle();
+    restoreGridView();
+    showToast('Auto-Patrol Mode OFF');
+  }
+}
+
+function startPatrolCycle() {
+  if (patrolInterval) clearInterval(patrolInterval);
+  let currentIndex = 0;
+  const ids = Array.from(cameraPeers.keys());
+  if (ids.length > 0) focusCamera(ids[0]);
+
+  patrolInterval = setInterval(() => {
+    const list = Array.from(cameraPeers.keys());
+    if (list.length === 0) return;
+    currentIndex = (currentIndex + 1) % list.length;
+    focusCamera(list[currentIndex]);
+  }, 8000);
+}
+
+function stopPatrolCycle() {
+  if (patrolInterval) {
+    clearInterval(patrolInterval);
+    patrolInterval = null;
+  }
+  isPatrolActive = false;
+  const btn = document.getElementById('btnModePatrol');
+  if (btn) btn.classList.remove('active');
+}
+
+function toggleQuadLayout() {
+  stopPatrolCycle();
+  restoreGridView();
+  const isQuad = cameraGrid.classList.toggle('quad-layout');
+  const qBtn = document.getElementById('btnModeQuad');
+  if (qBtn) qBtn.classList.toggle('active', isQuad);
+  if (btnModeGrid) btnModeGrid.classList.toggle('active', !isQuad);
+  showToast(isQuad ? 'Quad View (2x2) Activated' : 'Standard Grid View Activated');
 }
 
 // Disconnect single device initiated by host
@@ -1211,11 +1317,27 @@ function setupEventListeners() {
   // View Mode Buttons (Grid vs Focus)
   if (btnModeGrid) {
     btnModeGrid.addEventListener('click', () => {
+      stopPatrolCycle();
+      if (cameraGrid) cameraGrid.classList.remove('quad-layout');
+      const qBtn = document.getElementById('btnModeQuad');
+      if (qBtn) qBtn.classList.remove('active');
       restoreGridView();
     });
   }
+
+  const btnModeQuad = document.getElementById('btnModeQuad');
+  if (btnModeQuad) {
+    btnModeQuad.addEventListener('click', toggleQuadLayout);
+  }
+
+  const btnModePatrol = document.getElementById('btnModePatrol');
+  if (btnModePatrol) {
+    btnModePatrol.addEventListener('click', togglePatrolMode);
+  }
+
   if (btnModeFocus) {
     btnModeFocus.addEventListener('click', () => {
+      stopPatrolCycle();
       const firstLive = Array.from(cameraPeers.keys())[0];
       if (firstLive) {
         focusCamera(firstLive);
@@ -1531,9 +1653,19 @@ async function toggleEntityDetection() {
   }
 }
 
+function getFormattedCctvTimestamp() {
+  const d = new Date();
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(Math.floor(d.getMilliseconds() / 10), 2)}`;
+}
+
+let aiAnimFrameId = null;
+
 function startDetectionLoop() {
   if (aiDetectorState.intervalId) clearInterval(aiDetectorState.intervalId);
-  aiDetectorState.intervalId = setInterval(scanAllCameraFeeds, 280); // ~3.5 fps inference per camera for optimal smoothness & low CPU
+  // Async inference cycle running at ~4-5 FPS per camera without blocking UI
+  aiDetectorState.intervalId = setInterval(scanAllCameraFeeds, 220);
+  startAiRenderLoop();
 }
 
 function stopDetectionLoop() {
@@ -1541,10 +1673,102 @@ function stopDetectionLoop() {
     clearInterval(aiDetectorState.intervalId);
     aiDetectorState.intervalId = null;
   }
+  stopAiRenderLoop();
+}
+
+function startAiRenderLoop() {
+  if (aiAnimFrameId) cancelAnimationFrame(aiAnimFrameId);
+
+  function renderFrame() {
+    const now = performance.now();
+    const timeStr = getFormattedCctvTimestamp();
+
+    cameraPeers.forEach(peer => {
+      // 1. Update Real-Time CCTV On-Screen Display (OSD) timecode
+      const osdTime = peer.cardEl.querySelector('.tile-osd-time');
+      if (osdTime) {
+        osdTime.textContent = timeStr;
+      }
+
+      // 2. Render smooth interpolated AI detection reticles
+      const canvas = peer.canvasAi;
+      const media = (peer.isIpCam && peer.imgEl) ? peer.imgEl : peer.videoEl;
+      if (!canvas || !media) return;
+
+      const displayWidth = media.clientWidth || canvas.clientWidth || 640;
+      const displayHeight = media.clientHeight || canvas.clientHeight || 480;
+
+      if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+        canvas.width = displayWidth;
+        canvas.height = displayHeight;
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (!aiDetectorState.enabled || !peer.trackedTargets || peer.trackedTargets.length === 0) {
+        if (peer.entityPill && (!peer.trackedTargets || peer.trackedTargets.length === 0)) {
+          peer.entityPill.style.display = 'none';
+        }
+        return;
+      }
+
+      let activeCount = 0;
+      const activeCounts = {};
+
+      peer.trackedTargets = peer.trackedTargets.filter(trk => {
+        // Exponential coordinate smoothing (EMA Lerp) for 60fps silky motion
+        trk.current[0] += (trk.target[0] - trk.current[0]) * 0.32;
+        trk.current[1] += (trk.target[1] - trk.current[1]) * 0.32;
+        trk.current[2] += (trk.target[2] - trk.current[2]) * 0.32;
+        trk.current[3] += (trk.target[3] - trk.current[3]) * 0.32;
+
+        // Smooth opacity decay (persists for 380ms before fading out smoothly)
+        const age = now - trk.lastSeen;
+        if (age < 380) {
+          trk.opacity = Math.min(1.0, trk.opacity + 0.18);
+        } else {
+          trk.opacity = Math.max(0.0, trk.opacity - 0.06);
+        }
+
+        if (trk.opacity <= 0.01) return false;
+
+        drawCctvTargetReticle(ctx, trk);
+        activeCount++;
+        activeCounts[trk.class] = (activeCounts[trk.class] || 0) + 1;
+        return true;
+      });
+
+      // Update tile entity pill
+      if (peer.entityPill) {
+        if (activeCount > 0) {
+          const summary = Object.entries(activeCounts).map(([k, v]) => `${v} ${k.toUpperCase()}`).join(', ');
+          const textEl = peer.entityPill.querySelector('.ai-pill-text');
+          if (textEl) textEl.textContent = `YOLO: ${summary}`;
+          peer.entityPill.style.display = 'inline-flex';
+        } else {
+          peer.entityPill.style.display = 'none';
+        }
+      }
+    });
+
+    aiAnimFrameId = requestAnimationFrame(renderFrame);
+  }
+
+  aiAnimFrameId = requestAnimationFrame(renderFrame);
+}
+
+function stopAiRenderLoop() {
+  if (aiAnimFrameId) {
+    cancelAnimationFrame(aiAnimFrameId);
+    aiAnimFrameId = null;
+  }
 }
 
 function clearAllAiCanvases() {
   cameraPeers.forEach(peer => {
+    peer.trackedTargets = [];
+    peer.cardEl.classList.remove('cctv-alert-active');
     if (peer.canvasAi) {
       const ctx = peer.canvasAi.getContext('2d');
       ctx.clearRect(0, 0, peer.canvasAi.width, peer.canvasAi.height);
@@ -1555,53 +1779,46 @@ function clearAllAiCanvases() {
   });
 }
 
+let isScanningAi = false;
 async function scanAllCameraFeeds() {
-  if (!aiDetectorState.enabled) return;
+  if (!aiDetectorState.enabled || isScanningAi) return;
+  isScanningAi = true;
 
-  for (const peer of cameraPeers.values()) {
-    const isIpCam = peer.isIpCam && peer.imgEl;
-    const media = isIpCam ? peer.imgEl : peer.videoEl;
-    const canvas = peer.canvasAi;
-    if (!media || !canvas) continue;
+  try {
+    for (const peer of cameraPeers.values()) {
+      const isIpCam = peer.isIpCam && peer.imgEl;
+      const media = isIpCam ? peer.imgEl : peer.videoEl;
+      const canvas = peer.canvasAi;
+      if (!media || !canvas) continue;
 
-    if (!isIpCam && (media.readyState < 2 || media.videoWidth === 0)) continue;
-    if (isIpCam && (!media.complete || !media.naturalWidth)) continue;
+      if (!isIpCam && (media.readyState < 2 || media.videoWidth === 0)) continue;
+      if (isIpCam && (!media.complete || !media.naturalWidth)) continue;
 
-    const displayWidth = media.clientWidth || canvas.clientWidth || 640;
-    const displayHeight = media.clientHeight || canvas.clientHeight || 480;
-
-    // Match canvas dimensions to display dimensions
-    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-      canvas.width = displayWidth;
-      canvas.height = displayHeight;
-    }
-
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    let detections = [];
-    if (aiDetectorState.engine === 'yolov8') {
-      const yolo = aiDetectorState.yoloModel || window.sentinelYolo;
-      if (yolo && yolo.session) {
-        try {
-          const raw = await yolo.detect(media, 0.38);
-          detections = filterDetections(raw, media, canvas);
-        } catch (err) {
-          console.warn('YOLOv8 inference error:', err);
+      let rawDetections = [];
+      if (aiDetectorState.engine === 'yolov8') {
+        const yolo = aiDetectorState.yoloModel || window.sentinelYolo;
+        if (yolo && yolo.session) {
+          try {
+            rawDetections = await yolo.detect(media, 0.35);
+          } catch (err) {
+            console.warn('YOLOv8 inference error:', err);
+          }
+        } else if (!aiDetectorState.loading) {
+          initAiModel();
         }
-      } else if (!aiDetectorState.loading) {
-        initAiModel();
+      } else if (aiDetectorState.model) {
+        try {
+          rawDetections = await aiDetectorState.model.detect(media);
+        } catch (err) {}
       }
-    } else if (aiDetectorState.model) {
-      try {
-        const raw = await aiDetectorState.model.detect(media);
-        detections = filterDetections(raw, media, canvas);
-      } catch (err) {
-        // Fallback
-      }
-    }
 
-    renderDetectionReticles(ctx, canvas, detections, peer);
+      const filtered = filterDetections(rawDetections, media, canvas);
+      updatePeerTrackedTargets(peer, filtered);
+    }
+  } catch (e) {
+    console.warn('[AI Scan] Notice:', e);
+  } finally {
+    isScanningAi = false;
   }
 }
 
@@ -1616,7 +1833,7 @@ function filterDetections(raw, media, canvas) {
 
   return raw
     .filter(item => {
-      if (item.score < 0.48) return false;
+      if (item.score < 0.40) return false;
       if (aiDetectorState.filter === 'person') return item.class === 'person';
       if (aiDetectorState.filter === 'vehicle') return VEHICLE_CLASSES.includes(item.class);
       if (aiDetectorState.filter === 'animal') return ANIMAL_CLASSES.includes(item.class);
@@ -1632,102 +1849,134 @@ function filterDetections(raw, media, canvas) {
     }));
 }
 
-function renderDetectionReticles(ctx, canvas, detections, peer) {
-  if (!detections || detections.length === 0) {
-    if (peer.entityPill) peer.entityPill.style.display = 'none';
-    return;
-  }
+function updatePeerTrackedTargets(peer, detections) {
+  if (!peer.trackedTargets) peer.trackedTargets = [];
+  const now = performance.now();
+  const matchedTargetIds = new Set();
 
-  // Update tile entity pill
-  if (peer.entityPill) {
-    const counts = {};
-    detections.forEach(d => {
-      counts[d.class] = (counts[d.class] || 0) + 1;
+  detections.forEach(det => {
+    // Find closest existing target by Euclidean center distance
+    let bestIdx = -1;
+    let bestDist = 140; // max matching radius in pixels
+
+    peer.trackedTargets.forEach((trk, idx) => {
+      if (trk.class !== det.class) return;
+      const detCx = det.x + det.width / 2;
+      const detCy = det.y + det.height / 2;
+      const trkCx = trk.target[0] + trk.target[2] / 2;
+      const trkCy = trk.target[1] + trk.target[3] / 2;
+      const dist = Math.hypot(detCx - trkCx, detCy - trkCy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = idx;
+      }
     });
-    const summary = Object.entries(counts).map(([k, v]) => `${v} ${k.toUpperCase()}`).join(', ');
-    const textEl = peer.entityPill.querySelector('.ai-pill-text');
-    if (textEl) textEl.textContent = `AI: ${summary}`;
-    peer.entityPill.style.display = 'inline-flex';
-  }
 
-  const now = Date.now();
-  let hasHuman = false;
-
-  detections.forEach(d => {
-    const isPerson = d.class === 'person';
-    if (isPerson) hasHuman = true;
-
-    const strokeColor = isPerson ? '#10b981' : (VEHICLE_CLASSES.includes(d.class) ? '#06b6d4' : (ANIMAL_CLASSES.includes(d.class) ? '#c084fc' : '#f59e0b'));
-
-    // Draw Cybernetic Reticle Brackets
-    const x = d.x;
-    const y = d.y;
-    const w = d.width;
-    const h = d.height;
-    const bracketLen = Math.min(22, w * 0.25, h * 0.25);
-
-    ctx.save();
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 2;
-    ctx.shadowColor = strokeColor;
-    ctx.shadowBlur = 8;
-
-    // Subtle shaded fill
-    ctx.fillStyle = isPerson ? 'rgba(16, 185, 129, 0.08)' : 'rgba(6, 182, 212, 0.06)';
-    ctx.fillRect(x, y, w, h);
-
-    // Corner brackets
-    ctx.beginPath();
-    // Top-left
-    ctx.moveTo(x, y + bracketLen);
-    ctx.lineTo(x, y);
-    ctx.lineTo(x + bracketLen, y);
-    // Top-right
-    ctx.moveTo(x + w - bracketLen, y);
-    ctx.lineTo(x + w, y);
-    ctx.lineTo(x + w, y + bracketLen);
-    // Bottom-right
-    ctx.moveTo(x + w, y + h - bracketLen);
-    ctx.lineTo(x + w, y + h);
-    ctx.lineTo(x + w - bracketLen, y + h);
-    // Bottom-left
-    ctx.moveTo(x + bracketLen, y + h);
-    ctx.lineTo(x, y + h);
-    ctx.lineTo(x, y + h - bracketLen);
-    ctx.stroke();
-
-    // Center Crosshair
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-    ctx.fillStyle = strokeColor;
-    ctx.fill();
-
-    // Tag Banner
-    const enginePrefix = (aiDetectorState.engine === 'yolov8') ? 'YOLOv8' : 'AI';
-    const label = `${enginePrefix} // ${d.class.toUpperCase()} ${Math.round(d.score * 100)}%`;
-    ctx.font = 'bold 11px monospace';
-    const textWidth = ctx.measureText(label).width;
-
-    ctx.fillStyle = 'rgba(9, 9, 11, 0.9)';
-    ctx.fillRect(x, Math.max(0, y - 18), textWidth + 12, 18);
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, Math.max(0, y - 18), textWidth + 12, 18);
-
-    ctx.fillStyle = strokeColor;
-    ctx.fillText(label, x + 6, Math.max(12, y - 5));
-
-    ctx.restore();
+    if (bestIdx >= 0) {
+      matchedTargetIds.add(bestIdx);
+      const trk = peer.trackedTargets[bestIdx];
+      trk.target = [det.x, det.y, det.width, det.height];
+      trk.score = det.score;
+      trk.lastSeen = now;
+    } else {
+      // Add new tracked target with initial position
+      peer.trackedTargets.push({
+        id: Math.random(),
+        class: det.class,
+        score: det.score,
+        current: [det.x, det.y, det.width, det.height],
+        target: [det.x, det.y, det.width, det.height],
+        lastSeen: now,
+        opacity: 0.1,
+      });
+    }
   });
 
-  // Chime and event log rate-limited to once every 7 seconds
-  if (hasHuman && aiDetectorState.audioChime && (now - aiDetectorState.lastChimeTime > 7000)) {
-    aiDetectorState.lastChimeTime = now;
-    if (window.sentinelAudio) window.sentinelAudio.play('connect');
-    logEvent('AI', `ALERT: Human/Person entity identified on ${peer.deviceName} [${peer.deviceId}]`);
+  // CCTV Intrusion Alert when a human/person is identified
+  const hasHuman = detections.some(d => d.class === 'person' && d.score >= 0.48);
+  if (hasHuman) {
+    peer.cardEl.classList.add('cctv-alert-active');
+    const wallNow = Date.now();
+    if (aiDetectorState.audioChime && (wallNow - aiDetectorState.lastChimeTime > 5000)) {
+      aiDetectorState.lastChimeTime = wallNow;
+      if (window.sentinelAudio) {
+        window.sentinelAudio.play('alert');
+      }
+      logEvent('ALARM', `CCTV INTRUSION ALERT: Person detected on ${peer.deviceName} [${peer.deviceId}]`);
+    }
+  } else {
+    // Graceful removal after person leaves
+    if (!peer.lastAlertClear || (now - peer.lastAlertClear > 1000)) {
+      peer.cardEl.classList.remove('cctv-alert-active');
+      peer.lastAlertClear = now;
+    }
   }
+}
+
+function drawCctvTargetReticle(ctx, trk) {
+  const [x, y, w, h] = trk.current;
+  const isPerson = trk.class === 'person';
+  const isVehicle = VEHICLE_CLASSES.includes(trk.class);
+  const isAnimal = ANIMAL_CLASSES.includes(trk.class);
+
+  const strokeColor = isPerson ? '#10b981' : (isVehicle ? '#06b6d4' : (isAnimal ? '#c084fc' : '#f59e0b'));
+  const bracketLen = Math.min(24, Math.max(8, w * 0.22), Math.max(8, h * 0.22));
+
+  ctx.save();
+  ctx.globalAlpha = trk.opacity;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = strokeColor;
+  ctx.shadowBlur = 8;
+
+  // Semi-transparent target area tint
+  ctx.fillStyle = isPerson ? 'rgba(16, 185, 129, 0.07)' : 'rgba(6, 182, 212, 0.05)';
+  ctx.fillRect(x, y, w, h);
+
+  // 4 Cybernetic Tactical Corner Brackets
+  ctx.beginPath();
+  // Top-left
+  ctx.moveTo(x, y + bracketLen);
+  ctx.lineTo(x, y);
+  ctx.lineTo(x + bracketLen, y);
+  // Top-right
+  ctx.moveTo(x + w - bracketLen, y);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, y + bracketLen);
+  // Bottom-right
+  ctx.moveTo(x + w, y + h - bracketLen);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x + w - bracketLen, y + h);
+  // Bottom-left
+  ctx.moveTo(x + bracketLen, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x, y + h - bracketLen);
+  ctx.stroke();
+
+  // Tactical Center Crosshair Reticle
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 5, cy); ctx.lineTo(cx + 5, cy);
+  ctx.moveTo(cx, cy - 5); ctx.lineTo(cx, cy + 5);
+  ctx.stroke();
+
+  // High-Contrast Cybernetic Target Tag
+  const label = `[${trk.class.toUpperCase()} ${Math.round(trk.score * 100)}%]`;
+  ctx.font = 'bold 11px monospace';
+  const textWidth = ctx.measureText(label).width;
+
+  const tagY = Math.max(0, y - 20);
+  ctx.fillStyle = 'rgba(4, 4, 8, 0.92)';
+  ctx.fillRect(x, tagY, textWidth + 12, 19);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, tagY, textWidth + 12, 19);
+
+  ctx.fillStyle = strokeColor;
+  ctx.fillText(label, x + 6, tagY + 13);
+
+  ctx.restore();
 }
 
 // Add camera of current device directly to host matrix
