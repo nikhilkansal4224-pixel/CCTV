@@ -1,6 +1,15 @@
 // SENTINEL // Host Monitor Script (Multi-Camera Matrix Gateway)
 
+const showToast = (msg, duration) => {
+  if (typeof window.showToast === 'function') {
+    window.showToast(msg, duration);
+  } else {
+    console.log('[Toast]', msg);
+  }
+};
+
 let currentSessionId = null;
+let currentSession = null;
 let sessionExpiresAt = null;
 let timerInterval = null;
 let ws = null;
@@ -188,6 +197,7 @@ async function createNewSession(forceNew = false) {
     const data = await res.json();
 
     currentSessionId = data.sessionId;
+    currentSession = data;
     sessionExpiresAt = data.expiresAt;
     if (data.userId && !currentUserId) {
       currentUserId = data.userId;
@@ -195,8 +205,8 @@ async function createNewSession(forceNew = false) {
       if (userIdChip) userIdChip.textContent = currentUserId;
     }
 
-    sessionUrlInput.value = data.cameraUrl;
-    btnOpenLink.href = data.cameraUrl;
+    if (sessionUrlInput) sessionUrlInput.value = data.cameraUrl;
+    if (btnOpenLink) btnOpenLink.href = data.cameraUrl;
 
     // Load QR Code SVG
     await loadQrCode(currentSessionId);
@@ -219,7 +229,7 @@ async function createNewSession(forceNew = false) {
 }
 
 async function loadQrCode(sessionId) {
-  qrCodeContainer.innerHTML = '<div class="qr-skeleton">Loading QR...</div>';
+  if (qrCodeContainer) qrCodeContainer.innerHTML = '<div class="qr-skeleton">Loading QR...</div>';
   try {
     const queryParams = new URLSearchParams({
       protocol: selectedProtocol,
@@ -228,9 +238,9 @@ async function loadQrCode(sessionId) {
     const qrRes = await fetch(`/api/sessions/${sessionId}/qr?${queryParams.toString()}`);
     if (!qrRes.ok) throw new Error('QR fetch failed');
     const svgText = await qrRes.text();
-    qrCodeContainer.innerHTML = svgText;
+    if (qrCodeContainer) qrCodeContainer.innerHTML = svgText;
   } catch (err) {
-    qrCodeContainer.innerHTML = '<div class="qr-skeleton">Failed to render QR</div>';
+    if (qrCodeContainer) qrCodeContainer.innerHTML = '<div class="qr-skeleton">Failed to render QR</div>';
   }
 }
 
@@ -713,7 +723,7 @@ function getOrCreateCameraTile(deviceId, deviceName) {
     });
   }
 
-  cameraGrid.appendChild(cardEl);
+  if (cameraGrid) cameraGrid.appendChild(cardEl);
 
   const initialSleepTimer = masterSleepTimer && masterSleepTimer.active
     ? { ...masterSleepTimer }
@@ -846,7 +856,7 @@ function stopPatrolCycle() {
 function toggleQuadLayout() {
   stopPatrolCycle();
   restoreGridView();
-  const isQuad = cameraGrid.classList.toggle('quad-layout');
+  const isQuad = cameraGrid ? cameraGrid.classList.toggle('quad-layout') : false;
   const qBtn = document.getElementById('btnModeQuad');
   if (qBtn) qBtn.classList.toggle('active', isQuad);
   if (btnModeGrid) btnModeGrid.classList.toggle('active', !isQuad);
@@ -1265,35 +1275,44 @@ function cleanupCurrentSession() {
 // User Actions & Event Listeners
 function setupEventListeners() {
   // Copy Session URL
-  btnCopyLink.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(sessionUrlInput.value);
-      showToast('Camera link copied to clipboard!');
-    } catch (e) {
-      sessionUrlInput.select();
-      document.execCommand('copy');
-      showToast('Camera link copied!');
-    }
-  });
+  if (btnCopyLink) {
+    btnCopyLink.addEventListener('click', async () => {
+      const urlToCopy = sessionUrlInput ? sessionUrlInput.value : (currentSession?.cameraUrl || '');
+      try {
+        await navigator.clipboard.writeText(urlToCopy);
+        showToast('Camera link copied to clipboard!');
+      } catch (e) {
+        if (sessionUrlInput) {
+          sessionUrlInput.select();
+          document.execCommand('copy');
+        }
+        showToast('Camera link copied!');
+      }
+    });
+  }
 
   // End Entire Session Button
-  btnEndSession.addEventListener('click', async () => {
-    if (!currentSessionId) return;
-    if (confirm('Are you sure you want to end this surveillance session? All connected cameras will be disconnected.')) {
-      try {
-        await fetch(`/api/sessions/${currentSessionId}/end`, { method: 'POST' });
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'end-session', sessionId: currentSessionId, reason: 'Host terminated session' }));
-        }
-      } catch (e) {}
-      handleSessionEnded('You ended the session');
-    }
-  });
+  if (btnEndSession) {
+    btnEndSession.addEventListener('click', async () => {
+      if (!currentSessionId) return;
+      if (confirm('Are you sure you want to end this surveillance session? All connected cameras will be disconnected.')) {
+        try {
+          await fetch(`/api/sessions/${currentSessionId}/end`, { method: 'POST' });
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'end-session', sessionId: currentSessionId, reason: 'Host terminated session' }));
+          }
+        } catch (e) {}
+        handleSessionEnded('You ended the session');
+      }
+    });
+  }
 
   // New QR / Session Button (Forces generation of fresh session token)
-  btnNewSession.addEventListener('click', () => {
-    createNewSession(true);
-  });
+  if (btnNewSession) {
+    btnNewSession.addEventListener('click', () => {
+      createNewSession(true);
+    });
+  }
 
   // View Mode Buttons (Grid vs Focus)
   if (btnModeGrid) {
@@ -1329,22 +1348,28 @@ function setupEventListeners() {
   }
 
   // Fullscreen toggle
-  btnFullscreen.addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-      videoStage.requestFullscreen().catch(err => alert(err.message));
-    } else {
-      document.exitFullscreen();
-    }
-  });
+  if (btnFullscreen) {
+    btnFullscreen.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        if (videoStage && videoStage.requestFullscreen) {
+          videoStage.requestFullscreen().catch(err => alert(err.message));
+        }
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    });
+  }
 
   // Global Snapshot Frame (Focus camera or first live camera)
-  btnSnapshot.addEventListener('click', () => {
-    const targetId = focusedDeviceId || Array.from(cameraPeers.keys())[0];
-    if (!targetId) {
-      return showToast('No active camera feed to capture');
-    }
-    captureTileSnapshot(targetId);
-  });
+  if (btnSnapshot) {
+    btnSnapshot.addEventListener('click', () => {
+      const targetId = focusedDeviceId || Array.from(cameraPeers.keys())[0];
+      if (!targetId) {
+        return showToast('No active camera feed to capture');
+      }
+      captureTileSnapshot(targetId);
+    });
+  }
 
   // Video Clip Recording Toggle (Active/Focus Camera)
   if (btnRecord) {
@@ -2134,10 +2159,6 @@ function initDummyCctvControls() {
   const modal = document.getElementById('dummyCctvModal');
   const btnClose = document.getElementById('btnCloseCctvModal');
   const btnCancel = document.getElementById('btnCancelCctvModal');
-  const tabBtnConnect = document.getElementById('tabBtnCctvConnect');
-  const tabBtnGuide = document.getElementById('tabBtnCctvGuide');
-  const tabConnect = document.getElementById('cctvTabConnect');
-  const tabGuide = document.getElementById('cctvTabGuide');
   const btnGuideSwitch = document.getElementById('btnGuideSwitchToConnect');
   const btnTogglePass = document.getElementById('btnToggleCctvPass');
   const inputPass = document.getElementById('cctvInputPass');
