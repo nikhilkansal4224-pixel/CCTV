@@ -1630,20 +1630,41 @@ function getFormattedCctvTimestamp() {
 }
 
 let aiAnimFrameId = null;
+let aiLoopTimer = null;
+let isAiLoopRunning = false;
 
 function startDetectionLoop() {
-  if (aiDetectorState.intervalId) clearInterval(aiDetectorState.intervalId);
-  // Async inference cycle running at ~4-5 FPS per camera without blocking UI
-  aiDetectorState.intervalId = setInterval(scanAllCameraFeeds, 220);
+  stopDetectionLoop();
+  isAiLoopRunning = true;
   startAiRenderLoop();
+  scheduleNextAiScan(60);
 }
 
 function stopDetectionLoop() {
+  isAiLoopRunning = false;
+  if (aiLoopTimer) {
+    clearTimeout(aiLoopTimer);
+    aiLoopTimer = null;
+  }
   if (aiDetectorState.intervalId) {
     clearInterval(aiDetectorState.intervalId);
     aiDetectorState.intervalId = null;
   }
   stopAiRenderLoop();
+}
+
+function scheduleNextAiScan(delayMs = 120) {
+  if (!isAiLoopRunning || !aiDetectorState.enabled) return;
+  if (aiLoopTimer) clearTimeout(aiLoopTimer);
+  aiLoopTimer = setTimeout(async () => {
+    if (!isAiLoopRunning || !aiDetectorState.enabled) return;
+    try {
+      await scanAllCameraFeeds();
+    } catch (e) {
+      console.warn('[AI Scan] Loop warning:', e);
+    }
+    scheduleNextAiScan(120);
+  }, delayMs);
 }
 
 function startAiRenderLoop() {
@@ -1665,12 +1686,12 @@ function startAiRenderLoop() {
       const media = (peer.isIpCam && peer.imgEl) ? peer.imgEl : peer.videoEl;
       if (!canvas || !media) return;
 
-      const displayWidth = media.clientWidth || canvas.clientWidth || 640;
-      const displayHeight = media.clientHeight || canvas.clientHeight || 480;
+      const targetW = Math.round(media.clientWidth || canvas.clientWidth || 640);
+      const targetH = Math.round(media.clientHeight || canvas.clientHeight || 480);
 
-      if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-        canvas.width = displayWidth;
-        canvas.height = displayHeight;
+      if (targetW > 0 && targetH > 0 && (canvas.width !== targetW || canvas.height !== targetH)) {
+        canvas.width = targetW;
+        canvas.height = targetH;
       }
 
       const ctx = canvas.getContext('2d');
@@ -1784,6 +1805,9 @@ async function scanAllCameraFeeds() {
 
       const filtered = filterDetections(rawDetections, media, canvas);
       updatePeerTrackedTargets(peer, filtered);
+
+      // Yield 12ms to browser event loop between camera inferences
+      await new Promise(r => setTimeout(r, 12));
     }
   } catch (e) {
     console.warn('[AI Scan] Notice:', e);

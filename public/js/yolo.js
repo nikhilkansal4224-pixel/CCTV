@@ -19,6 +19,7 @@ class YoloV8Detector {
     this.modelPath = modelPath;
     this.session = null;
     this.loading = false;
+    this.isInferring = false;
     this.inputSize = 640;
     this.channelSize = this.inputSize * this.inputSize;
     this.floatData = new Float32Array(3 * this.channelSize); // Reusable pre-allocated buffer
@@ -31,8 +32,10 @@ class YoloV8Detector {
   async load() {
     if (this.session) return this.session;
     if (this.loading) {
-      while (this.loading) {
-        await new Promise(r => setTimeout(r, 60));
+      let waitLoops = 0;
+      while (this.loading && waitLoops < 60) {
+        await new Promise(r => setTimeout(r, 50));
+        waitLoops++;
       }
       return this.session;
     }
@@ -44,19 +47,16 @@ class YoloV8Detector {
 
     this.loading = true;
     try {
-      // Configure ONNX Runtime Web options with WebGPU + WASM SIMD
-      ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 4, 4);
-      ort.env.wasm.simd = true;
-
-      const executionProviders = [];
-      if (typeof navigator !== 'undefined' && navigator.gpu) {
-        executionProviders.push('webgpu');
+      // Configure rock-solid WASM SIMD execution.
+      // numThreads = 1 is guaranteed to never deadlock or freeze in browsers without SharedArrayBuffer / COOP isolation.
+      if (ort.env && ort.env.wasm) {
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.simd = true;
       }
-      executionProviders.push('wasm');
 
-      console.log(`[YOLOv8] Initializing Ultralytics YOLOv8 session (${executionProviders.join(', ')})...`);
+      console.log('[YOLOv8] Initializing Ultralytics YOLOv8 session (WASM SIMD)...');
       this.session = await ort.InferenceSession.create(this.modelPath, {
-        executionProviders,
+        executionProviders: ['wasm'],
         graphOptimizationLevel: 'all',
       });
       console.log('[YOLOv8] Session ready. Neural network loaded.');
@@ -94,83 +94,102 @@ class YoloV8Detector {
   }
 
   /**
-   * Run object detection inference on a video or image frame
+   * Run object detection inference on a video or image frame (Non-blocking & thread-safe)
    */
   async detect(media, confThreshold = 0.38, iouThreshold = 0.45) {
+    if (this.isInferring) {
+      return []; // Frame dropped cleanly to preserve smooth 60fps UI
+    }
+
     if (!this.session) {
       await this.load();
       if (!this.session) return [];
     }
 
-    const naturalW = media.videoWidth || media.naturalWidth || media.width || 640;
-    const naturalH = media.videoHeight || media.naturalHeight || media.height || 480;
+    this.isInferring = true;
+    try {
+      const naturalW = media.videoWidth || media.naturalWidth || media.width || 640;
+      const naturalH = media.videoHeight || media.naturalHeight || media.height || 480;
 
-    const floatData = this.preprocess(media);
-    const inputTensor = new ort.Tensor('float32', floatData, [1, 3, this.inputSize, this.inputSize]);
+      const floatData = this.preprocess(media);
+      const inputTensor = new ort.Tensor('float32', floatData, [1, 3, this.inputSize, this.inputSize]);
 
-    const inputName = this.session.inputNames[0] || 'images';
-    const feeds = {};
-    feeds[inputName] = inputTensor;
+      const inputName = this.session.inputNames[0] || 'images';
+      const feeds = {};
+      feeds[inputName] = inputTensor;
 
-    const results = await this.session.run(feeds);
-    const outputName = this.session.outputNames[0] || 'output0';
-    const outputTensor = results[outputName];
+      const results = await this.session.run(feeds);
+      const outputName = this.session.outputNames[0] || 'output0';
+      const outputTensor = results[outputName];
 
-    // Output shape is [1, 84, 8400]
-    const [batch, channels, numBoxes] = outputTensor.dims;
-    const rawData = outputTensor.data;
+      // Output shape is [1, 84, 8400]
+      const [batch, channels, numBoxes] = outputTensor.dims;
+      const rawData = outputTensor.data;
 
-    const boxes = [];
+      const numClasses = channels - 4;
+      const classOffsets = new Int32Array(numClasses);
+      for (let c = 0; c < numClasses; c++) {
+        classOffsets[c] = (c + 4) * numBoxes;
+      }
 
-    // Parse candidate predictions
-    for (let i = 0; i < numBoxes; i++) {
-      let maxScore = 0;
-      let maxClassId = -1;
+      const boxes = [];
+      const scaleX = naturalW / this.inputSize;
+      const scaleY = naturalH / this.inputSize;
 
-      // 80 classes start at channel index 4
-      for (let c = 4; c < channels; c++) {
-        const score = rawData[c * numBoxes + i];
-        if (score > maxScore) {
-          maxScore = score;
-          maxClassId = c - 4;
+      // High-speed parsing of candidate predictions
+      for (let i = 0; i < numBoxes; i++) {
+        let maxScore = 0;
+        let maxClassId = -1;
+
+        for (let c = 0; c < numClasses; c++) {
+          const score = rawData[classOffsets[c] + i];
+          if (score > maxScore) {
+            maxScore = score;
+            maxClassId = c;
+          }
+        }
+
+        if (maxScore >= confThreshold) {
+          const xc = rawData[i];
+          const yc = rawData[numBoxes + i];
+          const w = rawData[2 * numBoxes + i];
+          const h = rawData[3 * numBoxes + i];
+
+          const x = Math.max(0, xc - w * 0.5);
+          const y = Math.max(0, yc - h * 0.5);
+
+          boxes.push({
+            class: COCO_CLASSES[maxClassId] || `class_${maxClassId}`,
+            classId: maxClassId,
+            score: maxScore,
+            bbox: [x * scaleX, y * scaleY, w * scaleX, h * scaleY],
+          });
+
+          // Prevent quadratic NMS explosion
+          if (boxes.length >= 60) break;
         }
       }
 
-      if (maxScore >= confThreshold) {
-        const xc = rawData[0 * numBoxes + i];
-        const yc = rawData[1 * numBoxes + i];
-        const w = rawData[2 * numBoxes + i];
-        const h = rawData[3 * numBoxes + i];
-
-        // Convert center coordinates to corner coordinates [x, y, w, h] normalized to inputSize
-        const x = Math.max(0, xc - w / 2);
-        const y = Math.max(0, yc - h / 2);
-
-        // Scale to source media dimensions
-        const scaleX = naturalW / this.inputSize;
-        const scaleY = naturalH / this.inputSize;
-
-        boxes.push({
-          class: COCO_CLASSES[maxClassId] || `class_${maxClassId}`,
-          classId: maxClassId,
-          score: maxScore,
-          bbox: [x * scaleX, y * scaleY, w * scaleX, h * scaleY],
-        });
-      }
+      // Apply Non-Maximum Suppression (NMS)
+      return this.applyNms(boxes, iouThreshold);
+    } catch (err) {
+      console.warn('[YOLOv8] Inference warning:', err);
+      return [];
+    } finally {
+      this.isInferring = false;
     }
-
-    // Apply Non-Maximum Suppression (NMS)
-    return this.applyNms(boxes, iouThreshold);
   }
 
   /**
    * Non-Maximum Suppression (NMS) to eliminate duplicate overlapping boxes
    */
   applyNms(boxes, iouThreshold = 0.45) {
+    if (boxes.length <= 1) return boxes;
     boxes.sort((a, b) => b.score - a.score);
     const selected = [];
+    const limit = Math.min(boxes.length, 25);
 
-    for (let i = 0; i < boxes.length; i++) {
+    for (let i = 0; i < limit; i++) {
       let keep = true;
       const b1 = boxes[i].bbox;
 

@@ -354,28 +354,35 @@ async function scanNetwork({ username, password, targetIp, port, subnet, timeout
   const subnets = subnet ? [subnet] : getLocalSubnets();
   const candidateHosts = [];
 
-  // Scan all discovered subnets (Wi-Fi, hotspot, tethering)
+  // Prioritize localhost & gateway first
+  candidateHosts.push('127.0.0.1');
+
+  // Intelligent host priority: gateways, common DHCP pools (.100-.150, .2-.50)
   for (const sub of subnets) {
-    for (let i = 1; i <= 254; i++) {
-      candidateHosts.push(`${sub}.${i}`);
-    }
+    candidateHosts.push(`${sub}.1`);
+    for (let i = 100; i <= 140; i++) candidateHosts.push(`${sub}.${i}`);
+    for (let i = 2; i <= 40; i++) candidateHosts.push(`${sub}.${i}`);
+    for (let i = 141; i <= 254; i++) candidateHosts.push(`${sub}.${i}`);
+    for (let i = 41; i <= 99; i++) candidateHosts.push(`${sub}.${i}`);
   }
 
-  // Include localhost & loopback
-  candidateHosts.unshift('127.0.0.1');
-
   // Candidate camera ports for zero-configuration broad auto-scan
-  const portsToProbe = port ? [Number(port)] : [8080, 8081, 8088, 4747, 8000];
+  const portsToProbe = port ? [Number(port)] : [8080, 8081, 4747, 8088];
 
-  // Batch probe candidates with high concurrency
-  const BATCH_SIZE = 60;
+  // Batch probe candidates with bounded concurrency and instant early-exit
+  const BATCH_SIZE = 40;
+  const startTime = Date.now();
+  const MAX_SCAN_TIME_MS = 5000; // Never freeze: hard cap at 5 seconds
+
   for (let i = 0; i < candidateHosts.length; i += BATCH_SIZE) {
+    if (Date.now() - startTime > MAX_SCAN_TIME_MS) break;
+
     const chunk = candidateHosts.slice(i, i + BATCH_SIZE);
     const probes = chunk.map(async (host) => {
       for (const p of portsToProbe) {
         const isOpen = await probeTcpPort(host, p, timeoutMs);
         if (isOpen) {
-          const httpInfo = await probeCameraHttp(host, p, username, password, 1000);
+          const httpInfo = await probeCameraHttp(host, p, username, password, 800);
           if (httpInfo && httpInfo.isIpCam) {
             discovered.push({
               ip: host,
@@ -395,6 +402,11 @@ async function scanNetwork({ username, password, targetIp, port, subnet, timeout
     });
 
     await Promise.all(probes);
+
+    // If an active camera feed was discovered, complete immediately!
+    if (discovered.length > 0) {
+      break;
+    }
   }
 
   return {
